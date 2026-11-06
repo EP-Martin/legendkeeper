@@ -1,0 +1,5 @@
+node_modules/
+# Local mirrors and drafts hold GM secrets; never commit them.
+legendkeeper/
+.env
+*.log

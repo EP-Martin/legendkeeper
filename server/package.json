@@ -1,0 +1,29 @@
+{
+  "name": "legendkeeper-plugin-server",
+  "private": true,
+  "version": "0.1.0",
+  "description": "MCP server bundled into the LegendKeeper plugin for Claude",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "check": "npm run typecheck && npm test && npm run build && git diff --exit-code -- ../plugin/server"
+  },
+  "dependencies": {
+    "@legendkeeper/sdk": "^4.1.0",
+    "@modelcontextprotocol/sdk": "^1.32.2",
+    "marked": "^18.1.3",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "esbuild": "^0.28.2",
+    "typescript": "^7.0.2",
+    "vitest": "^5.1.0"
+  }
+}

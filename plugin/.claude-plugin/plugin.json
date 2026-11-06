@@ -1,0 +1,30 @@
+{
+  "name": "legendkeeper",
+  "displayName": "LegendKeeper",
+  "version": "0.1.0",
+  "description": "Unofficial worldbuilding companion for LegendKeeper: turn scanned session notes into pages, NPCs and timeline events in your world's voice, answer questions from your wiki, and check writing for continuity.",
+  "author": { "name": "EP-Martin", "url": "https://github.com/EP-Martin" },
+  "homepage": "https://github.com/EP-Martin/legendkeeper",
+  "repository": "https://github.com/EP-Martin/legendkeeper",
+  "license": "MIT",
+  "keywords": ["legendkeeper", "worldbuilding", "ttrpg", "dnd", "wiki", "campaign", "continuity"],
+  "userConfig": {
+    "api_key": {
+      "type": "string",
+      "title": "LegendKeeper API key",
+      "description": "In LegendKeeper: Project Settings → Developers → API Keys. Use an Admin key to create top-level pages. Requires a paid LegendKeeper plan.",
+      "sensitive": true,
+      "required": true
+    }
+  },
+  "mcpServers": {
+    "legendkeeper": {
+      "command": "node",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/server/index.js"],
+      "env": {
+        "LEGENDKEEPER_API_KEY": "${user_config.api_key}",
+        "LEGENDKEEPER_WORKSPACE": "${CLAUDE_PROJECT_DIR}"
+      }
+    }
+  }
+}

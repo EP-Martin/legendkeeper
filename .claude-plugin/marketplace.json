@@ -1,0 +1,14 @@
+{
+  "name": "ep-martin",
+  "description": "Claude plugins by EP-Martin.",
+  "owner": { "name": "EP-Martin", "url": "https://github.com/EP-Martin" },
+  "plugins": [
+    {
+      "name": "legendkeeper",
+      "source": "./plugin",
+      "description": "Unofficial worldbuilding companion for LegendKeeper.",
+      "category": "productivity",
+      "tags": ["legendkeeper", "worldbuilding", "ttrpg"]
+    }
+  ]
+}

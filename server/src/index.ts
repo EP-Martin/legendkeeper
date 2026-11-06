@@ -1,0 +1,355 @@
+#!/usr/bin/env node
+// MCP server for the LegendKeeper plugin. Stdio transport; one project per API key.
+import { randomUUID } from 'node:crypto'
+import { LegendKeeper, LegendKeeperError } from '@legendkeeper/sdk'
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
+import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
+import { z } from 'zod'
+import { markdownToBlocks } from './markdown.js'
+import { pull, refresh, STYLE_TAG, Workspace } from './mirror.js'
+
+const VERSION = '0.1.0'
+const apiKey = process.env.LEGENDKEEPER_API_KEY?.trim()
+// Hosts that cannot substitute ${CLAUDE_PROJECT_DIR} pass it through literally; fall back to cwd.
+const workspaceEnv = process.env.LEGENDKEEPER_WORKSPACE?.trim()
+const ws = new Workspace(workspaceEnv && !workspaceEnv.includes('${') ? workspaceEnv : process.cwd())
+const lk = apiKey ? new LegendKeeper({ apiKey, maxRetries: 4 }) : undefined
+
+const server = new McpServer({ name: 'legendkeeper', version: VERSION })
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+type ToolResult = { content: { type: 'text'; text: string }[]; isError?: boolean }
+
+function client(): LegendKeeper {
+  if (!lk) throw new Error('No API key. Set the plugin\'s "LegendKeeper API key" option (Project Settings → Developers → API Keys in LegendKeeper).')
+  return lk
+}
+
+function ok(data: unknown): ToolResult {
+  return { content: [{ type: 'text', text: typeof data === 'string' ? data : JSON.stringify(data, null, 2) }] }
+}
+
+async function run(fn: () => Promise<unknown>): Promise<ToolResult> {
+  try {
+    return ok(await fn())
+  } catch (error) {
+    if (error instanceof LegendKeeperError) {
+      return {
+        isError: true,
+        content: [{ type: 'text', text: JSON.stringify({
+          status: error.status, code: error.code, message: error.message, errors: error.errors, requestId: error.requestId,
+        }, null, 2) }],
+      }
+    }
+    return { isError: true, content: [{ type: 'text', text: (error as Error).message }] }
+  }
+}
+
+const newResourceId = () => `r${randomUUID().replaceAll('-', '').slice(0, 23)}`
+const RESOURCE_ID = /^r[A-Za-z0-9]{8,}$/
+
+/**
+ * Resolves page names and aliases to resource ids: first the pages created in this call,
+ * then the local mirror's index, then a live exact-match search for anything left.
+ */
+async function buildResolver(sources: string[], extra = new Map<string, string>()) {
+  const table = new Map<string, Set<string>>()
+  const add = (name: string, id: string) => {
+    const key = name.trim().toLowerCase()
+    if (!table.has(key)) table.set(key, new Set())
+    table.get(key)!.add(id)
+  }
+  const index = await ws.readIndex()
+  for (const entry of index?.entries ?? []) {
+    add(entry.name, entry.id)
+    for (const alias of entry.aliases) add(alias, entry.id)
+  }
+
+  const wanted = new Set<string>()
+  for (const source of sources) {
+    for (const match of source.matchAll(/\[\[([^\]|]+)(?:\|[^\]]+)?\]\]/g)) wanted.add(match[1]!.trim())
+  }
+  for (const name of wanted) {
+    const key = name.toLowerCase()
+    if (extra.has(key) || table.has(key)) continue
+    const hits = await client().search.search({ q: name, limit: 10 })
+    for (const hit of hits.data) {
+      const names = [hit.resource.name, ...((hit.resource as { aliases?: string[] }).aliases ?? [])]
+      if (names.some((n) => n.trim().toLowerCase() === key)) add(name, hit.resource.id)
+    }
+  }
+
+  const ambiguous: string[] = []
+  const resolve = (name: string): string | undefined => {
+    const key = name.trim().toLowerCase()
+    if (extra.has(key)) return extra.get(key)
+    if (RESOURCE_ID.test(name.trim())) return name.trim()
+    const ids = table.get(key)
+    if (!ids) return undefined
+    if (ids.size > 1) {
+      ambiguous.push(name)
+      return undefined
+    }
+    return [...ids][0]
+  }
+  return { resolve, ambiguous }
+}
+
+// ---------------------------------------------------------------------------
+// Tools: reading
+// ---------------------------------------------------------------------------
+
+server.registerTool('lk_status', {
+  title: 'LegendKeeper status',
+  description: 'Shows the connected LegendKeeper project, the local mirror folder, when it was last pulled, and where the world\'s style guide page is. Call this first in a session.',
+  inputSchema: {},
+  annotations: { readOnlyHint: true },
+}, () => run(async () => {
+  const index = await ws.readIndex()
+  const project = lk ? await lk.project() : undefined
+  const style = index?.entries.find((e) => e.tags.includes(STYLE_TAG))
+  return {
+    connected: Boolean(project),
+    project: project ? { id: project.id, name: project.name } : null,
+    workspace: ws.root,
+    mirror: index
+      ? { folder: ws.rel(ws.world), index: ws.rel(ws.world) + '/INDEX.md', pulledAt: index.pulledAt, resources: index.entries.length }
+      : null,
+    styleGuide: style ? { name: style.name, file: style.file } : null,
+    hint: !project ? 'Set the plugin API key option.' : !index ? 'Run lk_pull to build the local mirror.' : undefined,
+  }
+}))
+
+server.registerTool('lk_pull', {
+  title: 'Pull world into local mirror',
+  description: `Downloads every resource in the project into Markdown files under legendkeeper/world/ (one file per page, folders follow the sidebar tree) with an INDEX.md listing names, aliases, tags and hidden pages. Replaces the previous mirror. Costs about two API reads per resource, so a large world takes minutes; pull at the start of a session, not before every question. Pages tagged "${STYLE_TAG}" are the style guide.`,
+  inputSchema: {},
+  annotations: { readOnlyHint: false, idempotentHint: true },
+}, () => run(async () => {
+  const result = await pull(client(), ws)
+  return {
+    project: result.index.projectName,
+    resources: result.index.entries.length,
+    pages: result.pages,
+    timelines: result.timelines,
+    index: ws.rel(ws.world) + '/INDEX.md',
+    notMirrored: result.skipped.length ? result.skipped : undefined,
+    warnings: result.warnings.length ? result.warnings : undefined,
+  }
+}))
+
+server.registerTool('lk_search', {
+  title: 'Search LegendKeeper',
+  description: 'Live keyword search over page names, aliases and content. Use for fresh results or before a mirror exists; for questions and continuity checks, prefer reading the local mirror.',
+  inputSchema: { query: z.string().min(1), limit: z.number().int().min(1).max(100).default(20) },
+  annotations: { readOnlyHint: true },
+}, ({ query, limit }) => run(async () => {
+  const hits = await client().search.search({ q: query, limit })
+  return hits.data.map((hit) => ({
+    id: hit.resource.id,
+    name: hit.resource.name,
+    path: (hit.resource.path ?? []).map((p) => p.name).join(' / '),
+    tags: hit.resource.tags,
+    match: hit.document ? { document: hit.document.name, passage: hit.document.highlights?.[0]?.segment } : 'name',
+  }))
+}))
+
+// ---------------------------------------------------------------------------
+// Tools: writing
+// ---------------------------------------------------------------------------
+
+const pageInput = z.object({
+  name: z.string().min(1).describe('Page title.'),
+  parent: z.string().optional().describe('Parent page: the name of an existing page, a resource id, or the name of another page in this batch. Omit for the top level.'),
+  tags: z.array(z.string()).default([]),
+  aliases: z.array(z.string()).default([]).describe('Other names the page goes by; links and search match them.'),
+  hidden: z.boolean().default(false).describe('Hide the whole page from players.'),
+  markdown: z.string().describe('Page body in the plugin Markdown dialect (see the lk-style skill). Do not repeat the title as a heading.'),
+})
+
+server.registerTool('lk_create_pages', {
+  title: 'Create pages',
+  description: 'Creates up to 100 pages in one all-or-nothing request. [[Links]] between pages in the batch resolve, so create related NPCs, places and factions together. Run with dryRun first: it reports unresolved links and conversion warnings without writing anything.',
+  inputSchema: {
+    pages: z.array(pageInput).min(1).max(100),
+    dryRun: z.boolean().default(false),
+  },
+  annotations: { readOnlyHint: false, destructiveHint: false },
+}, ({ pages, dryRun }) => run(async () => {
+  const ids = new Map<string, string>()
+  for (const page of pages) {
+    const key = page.name.trim().toLowerCase()
+    if (ids.has(key)) throw new Error(`Two pages in the batch are named "${page.name}".`)
+    ids.set(key, newResourceId())
+    for (const alias of page.aliases) ids.set(alias.trim().toLowerCase(), ids.get(key)!)
+  }
+  const { resolve, ambiguous } = await buildResolver(pages.map((p) => p.markdown), ids)
+
+  const warnings: string[] = []
+  const prepared = pages.map((page) => {
+    const parsed = markdownToBlocks(page.markdown, { resolve })
+    warnings.push(...parsed.warnings.map((w) => `${page.name}: ${w}`))
+    let parentId: string | undefined
+    if (page.parent) {
+      parentId = resolve(page.parent)
+      if (!parentId) throw new Error(`Parent "${page.parent}" of "${page.name}" was not found. Pull the mirror or create the parent in this batch.`)
+    }
+    return {
+      id: ids.get(page.name.trim().toLowerCase())!,
+      name: page.name.trim(),
+      ...(parentId ? { parentId } : {}),
+      tags: page.tags,
+      aliases: page.aliases,
+      isHidden: page.hidden,
+      documents: [{ name: 'Main', type: 'page' as const, blocks: parsed.blocks }],
+    }
+  })
+  if (ambiguous.length) warnings.push(`Ambiguous names left as plain text (several pages match): ${[...new Set(ambiguous)].join(', ')}`)
+
+  // createMany requires a parent to come before its children.
+  const order = new Map(prepared.map((p) => [p.id, p]))
+  const sorted: typeof prepared = []
+  const visit = (p: (typeof prepared)[number], seen = new Set<string>()) => {
+    if (sorted.includes(p)) return
+    if (seen.has(p.id)) throw new Error(`Pages "${p.name}" and its parent form a cycle.`)
+    seen.add(p.id)
+    const parent = p.parentId ? order.get(p.parentId) : undefined
+    if (parent) visit(parent, seen)
+    sorted.push(p)
+  }
+  for (const p of prepared) visit(p)
+
+  if (dryRun) {
+    return {
+      dryRun: true,
+      pages: sorted.map((p) => ({ name: p.name, blocks: p.documents[0]!.blocks.length, parent: p.parentId ?? null })),
+      warnings,
+    }
+  }
+  const { resources } = await client().resources.createMany({ resources: sorted })
+  const mirrored = await refresh(client(), ws, resources.map((r) => r.id))
+  return { created: resources.map((r) => ({ id: r.id, name: r.name })), mirrored, warnings }
+}))
+
+server.registerTool('lk_append_to_page', {
+  title: 'Append to page',
+  description: 'Adds Markdown to the end of an existing page without touching what is already there, for example a dated "Session 14" section. Each block is one write, so keep appends to a section at a time.',
+  inputSchema: {
+    page: z.string().describe('Page name, alias or resource id.'),
+    markdown: z.string().min(1),
+    document: z.string().optional().describe('Tab name, when the page has several page tabs. Defaults to the first.'),
+  },
+  annotations: { readOnlyHint: false, destructiveHint: false },
+}, ({ page, markdown, document }) => run(async () => {
+  const { resolve } = await buildResolver([markdown, `[[${page}]]`])
+  const resourceId = resolve(page)
+  if (!resourceId) throw new Error(`Page "${page}" was not found.`)
+  const resource = await client().resources.get({ resourceId })
+  const docs = resource.documents.filter((d) => d.type === 'page' || d.type === 'blank')
+  const doc = document ? docs.find((d) => d.name?.toLowerCase() === document.toLowerCase()) : docs[0]
+  if (!doc) throw new Error(`"${resource.name}" has no page tab${document ? ` named "${document}"` : ''} to append to.`)
+
+  const parsed = markdownToBlocks(markdown, { resolve })
+  const ref = { resourceId, documentId: doc.id }
+  if (doc.type === 'blank') {
+    await client().documents.replaceBlocks(ref, { blocks: parsed.blocks })
+  } else {
+    let { version } = await client().documents.getBlocks(ref)
+    for (const block of parsed.blocks) version = (await client().blocks.insert(ref, { block, ifMatch: version })).version
+  }
+  const mirrored = await refresh(client(), ws, [resourceId])
+  return { page: resource.name, appended: parsed.blocks.length, mirrored, warnings: parsed.warnings }
+}))
+
+server.registerTool('lk_update_page_info', {
+  title: 'Update page info',
+  description: 'Renames a page or changes its tags, aliases or hidden flag. Lists replace the current values, so send the full list. Does not change page content.',
+  inputSchema: {
+    page: z.string().describe('Page name, alias or resource id.'),
+    name: z.string().min(1).optional(),
+    tags: z.array(z.string()).optional(),
+    aliases: z.array(z.string()).optional(),
+    hidden: z.boolean().optional(),
+  },
+  annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+}, ({ page, name, tags, aliases, hidden }) => run(async () => {
+  const { resolve } = await buildResolver([`[[${page}]]`])
+  const resourceId = resolve(page)
+  if (!resourceId) throw new Error(`Page "${page}" was not found.`)
+  const updated = await client().resources.update({ resourceId }, {
+    ...(name ? { name } : {}), ...(tags ? { tags } : {}), ...(aliases ? { aliases } : {}),
+    ...(hidden === undefined ? {} : { isHidden: hidden }),
+  })
+  const mirrored = await refresh(client(), ws, [resourceId])
+  return { id: updated.id, name: updated.name, tags: updated.tags, aliases: updated.aliases, hidden: updated.isHidden, mirrored }
+}))
+
+server.registerTool('lk_add_timeline_events', {
+  title: 'Add timeline events',
+  description: 'Adds events to a timeline, creating the timeline tab and any missing lanes by name. Dates are written in the timeline\'s own calendar, e.g. "1042", "Spring 1042" or "March 3rd, 1042"; check an existing event in the mirror for the format.',
+  inputSchema: {
+    page: z.string().describe('Name, alias or id of the page that holds (or will hold) the timeline.'),
+    timeline: z.string().optional().describe('Timeline tab name. Defaults to the first timeline tab, or a new tab named "Timeline".'),
+    events: z.array(z.object({
+      name: z.string().min(1),
+      lane: z.string().min(1).describe('Lane name, e.g. "Campaign", "History", or a character.'),
+      start: z.string().min(1).describe('Start date in the timeline calendar.'),
+      end: z.string().optional(),
+      link: z.string().optional().describe('Page this event is about (name, alias or id).'),
+      note: z.boolean().default(false).describe('A note instead of an event.'),
+      hidden: z.boolean().default(false).describe('Hide from players.'),
+    })).min(1).max(50),
+  },
+  annotations: { readOnlyHint: false, destructiveHint: false },
+}, ({ page, timeline, events }) => run(async () => {
+  const lkc = client()
+  const { resolve } = await buildResolver([page, ...events.flatMap((e) => (e.link ? [e.link] : []))].map((n) => `[[${n}]]`))
+  const resourceId = resolve(page)
+  if (!resourceId) throw new Error(`Page "${page}" was not found.`)
+
+  const resource = await lkc.resources.get({ resourceId })
+  const named = (d: { name?: string | null }) => !timeline || d.name?.toLowerCase() === timeline.toLowerCase()
+  let doc = resource.documents.find((d) => d.type === 'time' && named(d))
+    ?? (resource.documents.length === 1 && resource.documents[0]!.type === 'blank' ? resource.documents[0] : undefined)
+  if (!doc) doc = await lkc.documents.create({ resourceId }, { name: timeline ?? 'Timeline', type: 'time' })
+  const ref = { resourceId, documentId: doc.id }
+
+  const lanes = new Map<string, string>()
+  let lastRank = 'a0'
+  for (const lane of (await lkc.timelines.listLanes(ref)).data) {
+    lanes.set(lane.name.toLowerCase(), lane.id)
+    if (lane.rank && lane.rank > lastRank) lastRank = lane.rank
+  }
+  const laneFor = async (name: string) => {
+    const existing = lanes.get(name.toLowerCase())
+    if (existing) return existing
+    lastRank = `${lastRank}V`
+    const lane = await lkc.timelines.createLane(ref, { name, rank: lastRank, size: 'lg' })
+    lanes.set(name.toLowerCase(), lane.id)
+    return lane.id
+  }
+
+  const created: { name: string; start?: string; end?: string }[] = []
+  const warnings: string[] = []
+  for (const event of events) {
+    const linkId = event.link ? resolve(event.link) : undefined
+    if (event.link && !linkId) warnings.push(`${event.name}: link "${event.link}" not found; event left unlinked.`)
+    const result = await lkc.timelines.createEvent(ref, {
+      laneId: await laneFor(event.lane),
+      type: event.note ? 'note' : 'event',
+      name: event.name,
+      formattedStart: event.start,
+      ...(event.end ? { formattedEnd: event.end } : {}),
+      ...(linkId ? { uri: `lk://resources/${linkId}` } : {}),
+      ...(event.hidden ? { isHidden: true } : {}),
+    })
+    created.push({ name: event.name, start: result.formattedStart, end: result.formattedEnd })
+  }
+  const mirrored = await refresh(lkc, ws, [resourceId])
+  return { timeline: `${resource.name} / ${doc.name}`, created, mirrored, warnings }
+}))
+
+await server.connect(new StdioServerTransport())
