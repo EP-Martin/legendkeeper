@@ -396,7 +396,11 @@ function renderInfobox(rows: Block[], o: RenderOptions): string {
       for (const kv of row.rows) target.push(`${kv.key}: ${renderRuns(kv.content ?? [], o) || kv.text || ''}`)
     } else {
       const title = propertyTitle((row as { title?: string }).title ?? row.kind)
-      const body = (row.kind === 'image' ? `![${title}](${row.url})` : renderBlock(row, o)).replace(/\n+/g, ' ').replace(/^- /, '')
+      const body = row.kind === 'image'
+        ? `![${title}](${row.url})`
+        : row.kind === 'resourceCollection' || row.kind === 'resourceLink'
+          ? (row.items ?? []).map((item) => wikiLink(item.resourceId, undefined, o)).join(', ') || '(automatic list)'
+          : renderBlock(row, o).replace(/\n+/g, ' ').replace(/^- /, '')
       target.push(`${title}: ${body}`)
     }
   }

@@ -7257,9 +7257,6 @@ var require_dist = __commonJS({
   }
 });
 
-// src/index.ts
-import { createHash } from "node:crypto";
-
 // node_modules/@legendkeeper/sdk/dist/chunk-E7LARCL3.js
 var __defProp2 = Object.defineProperty;
 var __name = (target, value) => __defProp2(target, "name", { value, configurable: true });
@@ -39466,6 +39463,13 @@ var StdioServerTransport = class {
   }
 };
 
+// src/ids.ts
+import { createHash } from "node:crypto";
+var digest = (...parts) => createHash("sha256").update(parts.join("\0")).digest("hex");
+var stableId = (prefix, ...parts) => `${prefix}${digest(...parts).slice(0, 23)}`;
+var idempotencyKey = (...parts) => `lkp-${digest(...parts).slice(0, 48)}`;
+var isDuplicate = (error62) => error62 instanceof ConflictError && error62.code === "DUPLICATE_ID";
+
 // node_modules/marked/lib/marked.esm.js
 function H() {
   return { async: false, breaks: false, extensions: null, gfm: true, hooks: null, pedantic: false, renderer: null, silent: false, tokenizer: null, walkTokens: null };
@@ -41199,7 +41203,7 @@ function renderInfobox(rows, o) {
       for (const kv of row.rows) target.push(`${kv.key}: ${renderRuns(kv.content ?? [], o) || kv.text || ""}`);
     } else {
       const title = propertyTitle(row.title ?? row.kind);
-      const body = (row.kind === "image" ? `![${title}](${row.url})` : renderBlock(row, o)).replace(/\n+/g, " ").replace(/^- /, "");
+      const body = row.kind === "image" ? `![${title}](${row.url})` : row.kind === "resourceCollection" || row.kind === "resourceLink" ? (row.items ?? []).map((item) => wikiLink(item.resourceId, void 0, o)).join(", ") || "(automatic list)" : renderBlock(row, o).replace(/\n+/g, " ").replace(/^- /, "");
       target.push(`${title}: ${body}`);
     }
   }
@@ -41267,6 +41271,234 @@ function indent(text, pad, skipFirst = false) {
   return text.split("\n").map((line, i) => skipFirst && i === 0 || !line ? line : pad + line).join("\n");
 }
 
+// src/resolve.ts
+var RESOURCE_ID = /^r[A-Za-z0-9]{8,}$/;
+async function buildResolver(lk2, ws2, sources, extra = /* @__PURE__ */ new Map()) {
+  const table3 = /* @__PURE__ */ new Map();
+  const add = (name, id) => {
+    const key = name.trim().toLowerCase();
+    if (!table3.has(key)) table3.set(key, /* @__PURE__ */ new Set());
+    table3.get(key).add(id);
+  };
+  const index = await ws2.readIndex();
+  for (const entry of index?.entries ?? []) {
+    if (entry.template) continue;
+    add(entry.name, entry.id);
+    for (const alias of entry.aliases) add(alias, entry.id);
+  }
+  const wanted = /* @__PURE__ */ new Set();
+  for (const source of sources) {
+    for (const match of source.matchAll(/(?<!\\)\[\[([^\]|]+)(?:\|[^\]]+)?\]\]/g)) wanted.add(match[1].trim());
+  }
+  for (const name of wanted) {
+    const key = name.toLowerCase();
+    if (extra.has(key) || table3.has(key) || RESOURCE_ID.test(name)) continue;
+    const hits = await lk2.search.search({ q: name, limit: 10 });
+    for (const hit of hits.data) {
+      const names = [hit.resource.name, ...hit.resource.aliases ?? []];
+      if (names.some((n) => n.trim().toLowerCase() === key)) add(name, hit.resource.id);
+    }
+  }
+  const ambiguous = [];
+  const resolve = (name) => {
+    const key = name.trim().toLowerCase();
+    if (extra.has(key)) return extra.get(key);
+    if (RESOURCE_ID.test(name.trim())) return name.trim();
+    const ids = table3.get(key);
+    if (!ids) return void 0;
+    if (ids.size > 1) {
+      ambiguous.push(name);
+      return void 0;
+    }
+    return [...ids][0];
+  };
+  return { resolve, ambiguous };
+}
+
+// src/create.ts
+var CHUNK = 25;
+var PLACEHOLDER = "New page";
+async function createPages(lk2, ws2, pages, dryRun) {
+  const projectId = (await lk2.project()).id;
+  const batch = digest(projectId, JSON.stringify(pages));
+  const warnings = [];
+  const ids = /* @__PURE__ */ new Map();
+  for (const page of pages) {
+    const key = page.name.trim().toLowerCase();
+    if (ids.has(key)) throw new Error(`Two pages in the batch are named "${page.name}".`);
+    ids.set(key, stableId("r", batch, key));
+    for (const alias of page.aliases) ids.set(alias.trim().toLowerCase(), ids.get(key));
+  }
+  const templates = /* @__PURE__ */ new Map();
+  if (pages.some((p2) => p2.template)) {
+    for await (const t of await lk2.templates.list({ limit: 100 })) templates.set(t.name.trim().toLowerCase(), t.id);
+  }
+  const sources = pages.flatMap((p2) => [p2.markdown, ...p2.tabs.map((t) => t.markdown), ...Object.values(p2.sidebar)]);
+  const { resolve, ambiguous } = await buildResolver(lk2, ws2, sources, ids);
+  const convert = (where, markdown) => {
+    const result = markdownToBlocks(markdown, { resolve });
+    warnings.push(...result.warnings.map((w2) => `${where}: ${w2}`));
+    return result.blocks;
+  };
+  const prepared = pages.map((page) => {
+    let templateId;
+    if (page.template) {
+      templateId = templates.get(page.template.trim().toLowerCase());
+      if (!templateId) throw new Error(`No template named "${page.template}". Templates: ${[...templates.keys()].join(", ") || "none"}.`);
+    }
+    let parentId;
+    if (page.parent) {
+      parentId = resolve(page.parent);
+      if (!parentId) throw new Error(`Parent "${page.parent}" of "${page.name}" was not found. Pull the mirror or create the parent in this batch.`);
+    }
+    if (!templateId && Object.keys(page.sidebar).length) warnings.push(`${page.name}: sidebar values need a template; ignored.`);
+    return {
+      id: ids.get(page.name.trim().toLowerCase()),
+      name: page.name.trim(),
+      ...parentId ? { parentId } : {},
+      ...templateId ? { templateId } : {},
+      tags: page.tags,
+      aliases: page.aliases,
+      hidden: page.hidden,
+      tabs: [
+        { name: "Main", hidden: false, blocks: convert(page.name, page.markdown) },
+        ...page.tabs.map((t) => ({ name: t.name.trim(), hidden: t.hidden, blocks: convert(`${page.name} / ${t.name}`, t.markdown) }))
+      ],
+      sidebar: Object.fromEntries(Object.entries(page.sidebar).map(([k, v]) => [k, convert(`${page.name} / sidebar ${k}`, v)]))
+    };
+  });
+  if (ambiguous.length) warnings.push(`Ambiguous names left as plain text (several pages match): ${[...new Set(ambiguous)].join(", ")}`);
+  const sorted = parentsFirst(prepared);
+  if (dryRun) {
+    return {
+      dryRun: true,
+      pages: sorted.map((p2) => ({
+        name: p2.name,
+        template: p2.templateId ? pages.find((q2) => q2.name.trim() === p2.name).template : void 0,
+        tabs: p2.tabs.map((t) => t.hidden ? `${t.name} (hidden)` : t.name),
+        parent: p2.parentId ?? null
+      })),
+      warnings
+    };
+  }
+  const created = [];
+  const existing = [];
+  let run2 = [];
+  const flush = async () => {
+    for (let i = 0; i < run2.length; i += CHUNK) await createChunk(lk2, projectId, run2.slice(i, i + CHUNK), created, existing);
+    run2 = [];
+  };
+  for (const page of sorted) {
+    if (!page.templateId) {
+      run2.push(page);
+      continue;
+    }
+    await flush();
+    await createFromTemplate(lk2, page, created, existing);
+  }
+  await flush();
+  for (const page of sorted) {
+    if (page.templateId) await fillTemplatePage(lk2, page);
+    else await addHiddenTabs(lk2, page);
+  }
+  return { created, existing, warnings };
+}
+function parentsFirst(pages) {
+  const byId = new Map(pages.map((p2) => [p2.id, p2]));
+  const sorted = [];
+  const visit2 = (p2, seen = /* @__PURE__ */ new Set()) => {
+    if (sorted.includes(p2)) return;
+    if (seen.has(p2.id)) throw new Error(`Page "${p2.name}" and its parent form a cycle.`);
+    seen.add(p2.id);
+    const parent = p2.parentId ? byId.get(p2.parentId) : void 0;
+    if (parent) visit2(parent, seen);
+    sorted.push(p2);
+  };
+  for (const p2 of pages) visit2(p2);
+  return sorted;
+}
+async function createChunk(lk2, projectId, pages, created, existing) {
+  let chunk = pages;
+  for (let attempt = 0; chunk.length > 0; attempt++) {
+    const resources = chunk.map((p2) => ({
+      id: p2.id,
+      name: p2.name,
+      ...p2.parentId ? { parentId: p2.parentId } : {},
+      tags: p2.tags,
+      aliases: p2.aliases,
+      isHidden: p2.hidden,
+      // A create can't hide a tab, so hidden tabs are added afterwards (addHiddenTabs).
+      documents: p2.tabs.filter((t) => !t.hidden).map((t) => ({ name: t.name, type: "page", blocks: t.blocks }))
+    }));
+    try {
+      const result = await lk2.resources.createMany({ resources, idempotencyKey: idempotencyKey(projectId, JSON.stringify(resources)) });
+      created.push(...result.resources.map((r) => ({ id: r.id, name: r.name })));
+      return;
+    } catch (error62) {
+      if (!isDuplicate(error62) || attempt >= 2) throw error62;
+      const dupes = new Set((error62.errors ?? []).map((e) => /^resources\[(\d+)\]/.exec(e.path)?.[1]).filter((n) => n !== void 0).map(Number));
+      if (dupes.size === 0) throw error62;
+      existing.push(...chunk.filter((_2, j2) => dupes.has(j2)).map((p2) => ({ id: p2.id, name: p2.name })));
+      chunk = chunk.filter((_2, j2) => !dupes.has(j2));
+    }
+  }
+}
+async function createFromTemplate(lk2, page, created, existing) {
+  try {
+    await lk2.resources.createFromTemplate({
+      templateId: page.templateId,
+      id: page.id,
+      name: PLACEHOLDER,
+      ...page.parentId ? { parentId: page.parentId } : {}
+    });
+    created.push({ id: page.id, name: page.name });
+  } catch (error62) {
+    if (!isDuplicate(error62)) throw error62;
+    existing.push({ id: page.id, name: page.name });
+  }
+  await lk2.resources.update({ resourceId: page.id }, {
+    name: page.name,
+    isHidden: page.hidden,
+    aliases: page.aliases,
+    ...page.tags.length ? { tags: page.tags } : {}
+  });
+}
+async function fillTemplatePage(lk2, page) {
+  const resource = await lk2.resources.get({ resourceId: page.id });
+  const tabs = [...resource.documents].sort((a3, b) => (a3.rank ?? "") < (b.rank ?? "") ? -1 : 1);
+  const pageTabs = tabs.filter((d) => d.type === "page");
+  const byName = new Map(pageTabs.map((d) => [d.name?.toLowerCase() ?? "", d]));
+  const used = /* @__PURE__ */ new Set();
+  for (const [i, tab] of page.tabs.entries()) {
+    let doc = i === 0 && !byName.has("main") ? pageTabs[0] : byName.get(tab.name.toLowerCase());
+    if (doc && tab.hidden && !doc.isHidden) await lk2.documents.update({ resourceId: page.id, documentId: doc.id }, { isHidden: true });
+    if (!doc) doc = await lk2.documents.create({ resourceId: page.id }, { name: tab.name, type: "page", isHidden: tab.hidden });
+    await lk2.documents.replaceBlocks({ resourceId: page.id, documentId: doc.id }, { blocks: tab.blocks });
+    used.add(doc.id);
+  }
+  for (const doc of pageTabs) {
+    if (!used.has(doc.id)) await lk2.documents.delete({ resourceId: page.id, documentId: doc.id });
+  }
+  const wanted = new Map(Object.entries(page.sidebar).map(([k, v]) => [k.trim().toLowerCase(), v]));
+  if (wanted.size === 0) return;
+  for (const property2 of (await lk2.properties.list({ resourceId: page.id })).data) {
+    const title = property2.title?.trim().toLowerCase();
+    const blocks = title ? wanted.get(title) : void 0;
+    if (!blocks || property2.kind !== "textField") continue;
+    await lk2.properties.update({ resourceId: page.id, propertyId: property2.id }, { children: blocks });
+  }
+}
+async function addHiddenTabs(lk2, page) {
+  const hidden = page.tabs.filter((t) => t.hidden);
+  if (hidden.length === 0) return;
+  const present = new Set((await lk2.resources.get({ resourceId: page.id })).documents.map((d) => d.name?.toLowerCase()));
+  for (const tab of hidden) {
+    if (present.has(tab.name.toLowerCase())) continue;
+    const doc = await lk2.documents.create({ resourceId: page.id }, { name: tab.name, type: "page", isHidden: true });
+    await lk2.documents.replaceBlocks({ resourceId: page.id, documentId: doc.id }, { blocks: tab.blocks });
+  }
+}
+
 // src/mirror.ts
 import { existsSync } from "node:fs";
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
@@ -41311,7 +41543,7 @@ async function pull(lk2, ws2) {
   for await (const item of await lk2.resources.list({ limit: 100 })) items.push(item);
   const byId = new Map(items.map((item) => [item.id, item]));
   const nameOf = (id) => byId.get(id)?.name;
-  const files = assignFiles(items, byId, ws2.world);
+  const files = assignFiles(items, byId, ws2.world, join(ws2.world, "_templates"));
   const result = {
     index: { projectId: project.id, projectName: project.name ?? "Untitled project", pulledAt: (/* @__PURE__ */ new Date()).toISOString(), entries: [] },
     pages: 0,
@@ -41323,7 +41555,7 @@ async function pull(lk2, ws2) {
   await rm(staging, { recursive: true, force: true });
   await pool(items, 4, async (item) => {
     const ancestors = ancestry(item, byId);
-    const rendered = await renderResource(lk2, item, ancestors.map((a3) => a3.name), playerHidden(item, ancestors), nameOf);
+    const rendered = await renderResource(lk2, item, ancestors.map((a3) => a3.name), playerHidden(item, ancestors), isTemplate(item, ancestors), nameOf);
     result.pages += rendered.pages;
     result.timelines += rendered.timelines;
     result.skipped.push(...rendered.skipped);
@@ -41332,7 +41564,10 @@ async function pull(lk2, ws2) {
     await mkdir(dirname(target), { recursive: true });
     await writeFile(target, rendered.text);
   });
-  result.index.entries = items.map((item) => entryFor(item, ws2.rel(files.get(item.id)), playerHidden(item, ancestry(item, byId))));
+  result.index.entries = items.map((item) => {
+    const ancestors = ancestry(item, byId);
+    return entryFor(item, ws2.rel(files.get(item.id)), playerHidden(item, ancestors), isTemplate(item, ancestors));
+  });
   await mkdir(staging, { recursive: true });
   await rm(ws2.world, { recursive: true, force: true });
   await rename(staging, ws2.world);
@@ -41350,15 +41585,15 @@ async function refresh(lk2, ws2, resourceIds) {
     let file2 = existing?.file;
     if (!file2) {
       const parent = resource.parentId ? byId.get(resource.parentId) : void 0;
-      const dir = parent ? ws2.abs(parent.file.replace(/\.md$/, "")) : ws2.world;
+      const dir = parent ? ws2.abs(parent.file.replace(/\.md$/, "")) : resource.parentId === "templates" ? join(ws2.world, "_templates") : ws2.world;
       let candidate = join(dir, `${safeName(resource.name)}.md`);
       if (existsSync(candidate)) candidate = join(dir, `${safeName(resource.name)} (${id.slice(-6)}).md`);
       file2 = ws2.rel(candidate);
     }
-    const ancestors = chain({ ...entryFor(resource, file2, false) }, byId);
-    const entry = entryFor(resource, file2, playerHidden(resource, ancestors));
+    const ancestors = chain(entryFor(resource, file2, false, false), byId);
+    const entry = entryFor(resource, file2, playerHidden(resource, ancestors), isTemplate(resource, ancestors));
     byId.set(id, entry);
-    const rendered = await renderResource(lk2, resource, ancestors.map((e) => e.name), entry.playerHidden, (rid) => byId.get(rid)?.name);
+    const rendered = await renderResource(lk2, resource, ancestors.map((e) => e.name), entry.playerHidden, entry.template, (rid) => byId.get(rid)?.name);
     await mkdir(dirname(ws2.abs(file2)), { recursive: true });
     await writeFile(ws2.abs(file2), rendered.text);
     written.push(file2);
@@ -41367,7 +41602,7 @@ async function refresh(lk2, ws2, resourceIds) {
   await ws2.writeIndex(index);
   return written;
 }
-async function renderResource(lk2, item, path, hiddenFromPlayers, nameOf) {
+async function renderResource(lk2, item, path, hiddenFromPlayers, template, nameOf) {
   const out = { text: "", pages: 0, timelines: 0, skipped: [], warnings: [] };
   const sections = [];
   const documents = [];
@@ -41378,11 +41613,10 @@ async function renderResource(lk2, item, path, hiddenFromPlayers, nameOf) {
     tabs = [...full.documents].sort((a3, b) => (a3.rank ?? "") < (b.rank ?? "") ? -1 : (a3.rank ?? "") > (b.rank ?? "") ? 1 : 0);
     for (const doc of full.documents) if (doc.isHidden) hiddenTabs.add(doc.id);
     const properties = full.properties ?? [];
-    if (properties.length) {
-      sections.push(`## Sidebar
+    const sidebar = properties.length ? blocksToMarkdown([{ kind: "infobox", rows: properties }], { nameOf }).trim() : "";
+    if (sidebar) sections.push(`## Sidebar
 
-${blocksToMarkdown([{ kind: "infobox", rows: properties }], { nameOf }).trim()}`);
-    }
+${sidebar}`);
   } catch (error62) {
     out.warnings.push(`${item.name} (resource): ${error62.message}`);
   }
@@ -41424,6 +41658,7 @@ ${body}` : body);
     aliases: item.aliases,
     hidden: Boolean(item.isHidden),
     playerHidden: hiddenFromPlayers,
+    ...template ? { template: true } : {},
     updatedAt: item.updatedAt ?? null,
     documents
   };
@@ -41447,7 +41682,7 @@ async function renderTimeline(lk2, ref, heading, nameOf) {
   if (lines.length === 2) lines.push("_No events._");
   return lines.join("\n");
 }
-function entryFor(item, file2, hiddenFromPlayers) {
+function entryFor(item, file2, hiddenFromPlayers, template) {
   return {
     id: item.id,
     name: item.name,
@@ -41456,8 +41691,12 @@ function entryFor(item, file2, hiddenFromPlayers) {
     parentId: item.parentId ?? null,
     hidden: Boolean(item.isHidden),
     playerHidden: hiddenFromPlayers,
+    template,
     file: file2
   };
+}
+function isTemplate(item, ancestors) {
+  return item.parentId === "templates" || ancestors.some((a3) => a3.parentId === "templates" || a3.template);
 }
 function playerHidden(item, ancestors) {
   return Boolean(item.isHidden) || ancestors.some((a3) => a3.isHidden || a3.hidden);
@@ -41484,7 +41723,7 @@ function chain(entry, byId) {
   }
   return out;
 }
-function assignFiles(items, byId, root) {
+function assignFiles(items, byId, root, templateRoot) {
   const files = /* @__PURE__ */ new Map();
   const used = /* @__PURE__ */ new Set();
   const visiting = /* @__PURE__ */ new Set();
@@ -41493,7 +41732,7 @@ function assignFiles(items, byId, root) {
     if (done) return done;
     visiting.add(item.id);
     const parent = item.parentId ? byId.get(item.parentId) : void 0;
-    const dir = parent && !visiting.has(parent.id) ? fileFor(parent).replace(/\.md$/, "") : root;
+    const dir = parent && !visiting.has(parent.id) ? fileFor(parent).replace(/\.md$/, "") : item.parentId === "templates" ? templateRoot : root;
     let stem = safeName(item.name);
     if (used.has(join(dir, stem).toLowerCase())) stem = `${stem} (${item.id.slice(-6)})`;
     used.add(join(dir, stem).toLowerCase());
@@ -41516,25 +41755,32 @@ ${Object.entries(data).map(([k, v]) => `${k}: ${JSON.stringify(v)}`).join("\n")}
 `;
 }
 function renderIndex(index, ws2) {
-  const rows = [...index.entries].sort((a3, b) => a3.file.localeCompare(b.file)).map((e) => {
-    const link2 = relative(ws2.world, ws2.abs(e.file)).split("\\").join("/").replace(/ /g, "%20");
+  const row = (e) => {
+    const link2 = mdPath(relative(ws2.world, ws2.abs(e.file)));
     const extra = [
       e.aliases.length ? `aka ${e.aliases.join(", ")}` : "",
       e.tags.length ? `tags: ${e.tags.join(", ")}` : "",
       e.hidden ? "HIDDEN" : e.playerHidden ? "hidden (parent)" : ""
     ].filter(Boolean).join(" \xB7 ");
     return `- [${e.name}](${link2})${extra ? ` \u2014 ${extra}` : ""}`;
-  });
+  };
+  const sorted = [...index.entries].sort((a3, b) => a3.file.localeCompare(b.file));
+  const rows = sorted.filter((e) => !e.template).map(row);
+  const templates = sorted.filter((e) => e.template).map(row);
   const style = index.entries.find((e) => e.tags.includes(STYLE_TAG));
   return [
     `# ${index.projectName}`,
     "",
     `Pulled ${index.pulledAt}. ${index.entries.length} resources.`,
-    style ? `Style guide: [${style.name}](${relative(ws2.world, ws2.abs(style.file)).split("\\").join("/").replace(/ /g, "%20")})` : `Style guide: none yet. Tag a hidden page "${STYLE_TAG}".`,
+    style ? `Style guide: [${style.name}](${mdPath(relative(ws2.world, ws2.abs(style.file)))})` : `Style guide: none yet. Tag a hidden page "${STYLE_TAG}".`,
     "",
     ...rows,
-    ""
+    "",
+    ...templates.length ? ["## Templates", "", "Page structures for lk_create_pages. Their text is placeholder guidance, never lore.", "", ...templates, ""] : []
   ].join("\n");
+}
+function mdPath(path) {
+  return path.split("\\").join("/").replace(/[ ()]/g, (c2) => encodeURIComponent(c2).replace("(", "%28").replace(")", "%29"));
 }
 async function pool(items, size, worker) {
   let next = 0;
@@ -41580,67 +41826,24 @@ async function run(fn) {
     return { isError: true, content: [{ type: "text", text: error62.message + hint }] };
   }
 }
-var digest = (...parts) => createHash("sha256").update(parts.join("\0")).digest("hex");
-var stableId = (prefix, ...parts) => `${prefix}${digest(...parts).slice(0, 23)}`;
-var idempotencyKey = (...parts) => `lkp-${digest(...parts).slice(0, 48)}`;
-var isDuplicate = (error62) => error62 instanceof ConflictError && error62.code === "DUPLICATE_ID";
-var CREATE_CHUNK = 25;
-var RESOURCE_ID = /^r[A-Za-z0-9]{8,}$/;
-async function buildResolver(sources, extra = /* @__PURE__ */ new Map()) {
-  const table3 = /* @__PURE__ */ new Map();
-  const add = (name, id) => {
-    const key = name.trim().toLowerCase();
-    if (!table3.has(key)) table3.set(key, /* @__PURE__ */ new Set());
-    table3.get(key).add(id);
-  };
-  const index = await ws.readIndex();
-  for (const entry of index?.entries ?? []) {
-    add(entry.name, entry.id);
-    for (const alias of entry.aliases) add(alias, entry.id);
-  }
-  const wanted = /* @__PURE__ */ new Set();
-  for (const source of sources) {
-    for (const match of source.matchAll(/\[\[([^\]|]+)(?:\|[^\]]+)?\]\]/g)) wanted.add(match[1].trim());
-  }
-  for (const name of wanted) {
-    const key = name.toLowerCase();
-    if (extra.has(key) || table3.has(key)) continue;
-    const hits = await client().search.search({ q: name, limit: 10 });
-    for (const hit of hits.data) {
-      const names = [hit.resource.name, ...hit.resource.aliases ?? []];
-      if (names.some((n) => n.trim().toLowerCase() === key)) add(name, hit.resource.id);
-    }
-  }
-  const ambiguous = [];
-  const resolve = (name) => {
-    const key = name.trim().toLowerCase();
-    if (extra.has(key)) return extra.get(key);
-    if (RESOURCE_ID.test(name.trim())) return name.trim();
-    const ids = table3.get(key);
-    if (!ids) return void 0;
-    if (ids.size > 1) {
-      ambiguous.push(name);
-      return void 0;
-    }
-    return [...ids][0];
-  };
-  return { resolve, ambiguous };
-}
+var buildResolver2 = (sources) => buildResolver(client(), ws, sources);
 server.registerTool("lk_status", {
   title: "LegendKeeper status",
-  description: "Shows the connected LegendKeeper project, the local mirror folder, when it was last pulled, and where the world's style guide page is. Call this first in a session.",
+  description: "Shows the connected LegendKeeper project, the local mirror folder, when it was last pulled, the world's style guide page and its page templates. Call this first in a session.",
   inputSchema: {},
   annotations: { readOnlyHint: true }
 }, () => run(async () => {
   const index = await ws.readIndex();
   const project = lk ? await lk.project() : void 0;
   const style = index?.entries.find((e) => e.tags.includes(STYLE_TAG));
+  const templates = index?.entries.filter((e) => e.template && e.parentId === "templates").map((e) => ({ name: e.name, file: e.file }));
   return {
     connected: Boolean(project),
     project: project ? { id: project.id, name: project.name } : null,
     workspace: ws.root,
     mirror: index ? { folder: ws.rel(ws.world), index: ws.rel(ws.world) + "/INDEX.md", pulledAt: index.pulledAt, resources: index.entries.length } : null,
     styleGuide: style ? { name: style.name, file: style.file } : null,
+    templates: templates?.length ? templates : void 0,
     hint: !project ? "Set the plugin API key option." : !index ? "Run lk_pull to build the local mirror." : void 0
   };
 }));
@@ -41679,91 +41882,36 @@ server.registerTool("lk_search", {
 var pageInput = external_exports.object({
   name: external_exports.string().min(1).describe("Page title."),
   parent: external_exports.string().optional().describe("Parent page: the name of an existing page, a resource id, or the name of another page in this batch. Omit for the top level."),
-  tags: external_exports.array(external_exports.string()).default([]),
+  template: external_exports.string().optional().describe("Name of a LegendKeeper template in this world (lk_status lists them) to build the page from. Its sidebar and map tabs are kept; its page tabs are filled from markdown and tabs, and unfilled ones are removed."),
+  tags: external_exports.array(external_exports.string()).default([]).describe("Tags. With a template, omit to keep the template's tags."),
   aliases: external_exports.array(external_exports.string()).default([]).describe("Other names the page goes by; links and search match them."),
   hidden: external_exports.boolean().default(false).describe("Hide the whole page from players."),
-  markdown: external_exports.string().describe("Page body in the plugin Markdown dialect (see the lk-style skill). Do not repeat the title as a heading.")
+  markdown: external_exports.string().describe(`Body of the first tab (a template's first tab, e.g. "Overview", or "Main") in the plugin Markdown dialect (see the lk-style skill). Do not repeat the title as a heading.`),
+  tabs: external_exports.array(external_exports.object({
+    name: external_exports.string().min(1).describe("Tab name. With a template, use the template's tab names."),
+    markdown: external_exports.string(),
+    hidden: external_exports.boolean().default(false).describe('Hide this tab from players, e.g. "GM Notes" or "Backstory".')
+  })).max(4).default([]).describe("Further page tabs after the first."),
+  sidebar: external_exports.record(external_exports.string(), external_exports.string()).default({}).describe('Template pages only: text for sidebar text fields by title, e.g. {"Summary": "\u2026"}.')
 });
 server.registerTool("lk_create_pages", {
   title: "Create pages",
-  description: "Creates up to 100 pages. [[Links]] between pages in the batch resolve, so create related NPCs, places and factions together. Run with dryRun first: it reports unresolved links and conversion warnings without writing anything. Safe to retry: calling again with the same input skips pages already created.",
+  description: "Creates up to 100 pages, plain or from the world's templates. [[Links]] between pages in the batch resolve, so create related NPCs, places and factions together. Run with dryRun first: it reports unresolved links and conversion warnings without writing anything. Safe to retry: calling again with the same input skips work already done.",
   inputSchema: {
     pages: external_exports.array(pageInput).min(1).max(100),
     dryRun: external_exports.boolean().default(false)
   },
   annotations: { readOnlyHint: false, destructiveHint: false }
 }, ({ pages, dryRun }) => run(async () => {
-  const projectId = (await client().project()).id;
-  const batch = digest(projectId, JSON.stringify(pages));
-  const ids = /* @__PURE__ */ new Map();
-  for (const page of pages) {
-    const key = page.name.trim().toLowerCase();
-    if (ids.has(key)) throw new Error(`Two pages in the batch are named "${page.name}".`);
-    ids.set(key, stableId("r", batch, key));
-    for (const alias of page.aliases) ids.set(alias.trim().toLowerCase(), ids.get(key));
-  }
-  const { resolve, ambiguous } = await buildResolver(pages.map((p2) => p2.markdown), ids);
-  const warnings = [];
-  const prepared = pages.map((page) => {
-    const parsed = markdownToBlocks(page.markdown, { resolve });
-    warnings.push(...parsed.warnings.map((w2) => `${page.name}: ${w2}`));
-    let parentId;
-    if (page.parent) {
-      parentId = resolve(page.parent);
-      if (!parentId) throw new Error(`Parent "${page.parent}" of "${page.name}" was not found. Pull the mirror or create the parent in this batch.`);
-    }
-    return {
-      id: ids.get(page.name.trim().toLowerCase()),
-      name: page.name.trim(),
-      ...parentId ? { parentId } : {},
-      tags: page.tags,
-      aliases: page.aliases,
-      isHidden: page.hidden,
-      documents: [{ name: "Main", type: "page", blocks: parsed.blocks }]
-    };
-  });
-  if (ambiguous.length) warnings.push(`Ambiguous names left as plain text (several pages match): ${[...new Set(ambiguous)].join(", ")}`);
-  const order = new Map(prepared.map((p2) => [p2.id, p2]));
-  const sorted = [];
-  const visit2 = (p2, seen = /* @__PURE__ */ new Set()) => {
-    if (sorted.includes(p2)) return;
-    if (seen.has(p2.id)) throw new Error(`Pages "${p2.name}" and its parent form a cycle.`);
-    seen.add(p2.id);
-    const parent = p2.parentId ? order.get(p2.parentId) : void 0;
-    if (parent) visit2(parent, seen);
-    sorted.push(p2);
+  const result = await createPages(client(), ws, pages, dryRun);
+  if ("dryRun" in result) return result;
+  const mirrored = await refresh(client(), ws, [...result.created, ...result.existing].map((r) => r.id));
+  return {
+    created: result.created,
+    alreadyExisted: result.existing.length ? result.existing : void 0,
+    mirrored,
+    warnings: result.warnings
   };
-  for (const p2 of prepared) visit2(p2);
-  if (dryRun) {
-    return {
-      dryRun: true,
-      pages: sorted.map((p2) => ({ name: p2.name, blocks: p2.documents[0].blocks.length, parent: p2.parentId ?? null })),
-      warnings
-    };
-  }
-  const created = [];
-  const existing = [];
-  for (let i = 0; i < sorted.length; i += CREATE_CHUNK) {
-    let chunk = sorted.slice(i, i + CREATE_CHUNK);
-    for (let attempt = 0; chunk.length > 0; attempt++) {
-      try {
-        const { resources } = await client().resources.createMany({
-          resources: chunk,
-          idempotencyKey: idempotencyKey(projectId, JSON.stringify(chunk))
-        });
-        created.push(...resources.map((r) => ({ id: r.id, name: r.name })));
-        break;
-      } catch (error62) {
-        if (!isDuplicate(error62) || attempt >= 2) throw error62;
-        const dupes = new Set((error62.errors ?? []).map((e) => /^resources\[(\d+)\]/.exec(e.path)?.[1]).filter((n) => n !== void 0).map(Number));
-        if (dupes.size === 0) throw error62;
-        existing.push(...chunk.filter((_2, j2) => dupes.has(j2)).map((p2) => ({ id: p2.id, name: p2.name })));
-        chunk = chunk.filter((_2, j2) => !dupes.has(j2));
-      }
-    }
-  }
-  const mirrored = await refresh(client(), ws, [...created, ...existing].map((r) => r.id));
-  return { created, alreadyExisted: existing.length ? existing : void 0, mirrored, warnings };
 }));
 server.registerTool("lk_append_to_page", {
   title: "Append to page",
@@ -41775,7 +41923,7 @@ server.registerTool("lk_append_to_page", {
   },
   annotations: { readOnlyHint: false, destructiveHint: false }
 }, ({ page, markdown, document }) => run(async () => {
-  const { resolve } = await buildResolver([markdown, `[[${page}]]`]);
+  const { resolve } = await buildResolver2([markdown, `[[${page}]]`]);
   const resourceId = resolve(page);
   if (!resourceId) throw new Error(`Page "${page}" was not found.`);
   const resource = await client().resources.get({ resourceId });
@@ -41815,7 +41963,7 @@ server.registerTool("lk_update_page_info", {
   },
   annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true }
 }, ({ page, name, tags, aliases, hidden }) => run(async () => {
-  const { resolve } = await buildResolver([`[[${page}]]`]);
+  const { resolve } = await buildResolver2([`[[${page}]]`]);
   const resourceId = resolve(page);
   if (!resourceId) throw new Error(`Page "${page}" was not found.`);
   const updated = await client().resources.update({ resourceId }, {
@@ -41846,7 +41994,7 @@ server.registerTool("lk_add_timeline_events", {
   annotations: { readOnlyHint: false, destructiveHint: false }
 }, ({ page, timeline, events }) => run(async () => {
   const lkc = client();
-  const { resolve } = await buildResolver([page, ...events.flatMap((e) => e.link ? [e.link] : [])].map((n) => `[[${n}]]`));
+  const { resolve } = await buildResolver2([page, ...events.flatMap((e) => e.link ? [e.link] : [])].map((n) => `[[${n}]]`));
   const resourceId = resolve(page);
   if (!resourceId) throw new Error(`Page "${page}" was not found.`);
   const resource = await lkc.resources.get({ resourceId });

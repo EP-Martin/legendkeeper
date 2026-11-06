@@ -19,6 +19,8 @@ export interface IndexEntry {
   hidden: boolean
   /** Hidden itself or under a hidden ancestor: keep out of player-facing answers. */
   playerHidden: boolean
+  /** A LegendKeeper template (under the reserved "templates" root): structure, not lore. */
+  template: boolean
   /** Path relative to the workspace root, e.g. legendkeeper/world/Places/Thornwick.md */
   file: string
 }
@@ -84,7 +86,7 @@ export async function pull(lk: LegendKeeper, ws: Workspace): Promise<PullResult>
 
   const byId = new Map(items.map((item) => [item.id, item]))
   const nameOf = (id: string) => byId.get(id)?.name
-  const files = assignFiles(items, byId, ws.world)
+  const files = assignFiles(items, byId, ws.world, join(ws.world, '_templates'))
   const result: PullResult = {
     index: { projectId: project.id, projectName: project.name ?? 'Untitled project', pulledAt: new Date().toISOString(), entries: [] },
     pages: 0,
@@ -98,7 +100,7 @@ export async function pull(lk: LegendKeeper, ws: Workspace): Promise<PullResult>
   await rm(staging, { recursive: true, force: true })
   await pool(items, 4, async (item) => {
     const ancestors = ancestry(item, byId)
-    const rendered = await renderResource(lk, item, ancestors.map((a) => a.name), playerHidden(item, ancestors), nameOf)
+    const rendered = await renderResource(lk, item, ancestors.map((a) => a.name), playerHidden(item, ancestors), isTemplate(item, ancestors), nameOf)
     result.pages += rendered.pages
     result.timelines += rendered.timelines
     result.skipped.push(...rendered.skipped)
@@ -108,8 +110,10 @@ export async function pull(lk: LegendKeeper, ws: Workspace): Promise<PullResult>
     await writeFile(target, rendered.text)
   })
 
-  result.index.entries = items.map((item) =>
-    entryFor(item, ws.rel(files.get(item.id)!), playerHidden(item, ancestry(item, byId))))
+  result.index.entries = items.map((item) => {
+    const ancestors = ancestry(item, byId)
+    return entryFor(item, ws.rel(files.get(item.id)!), playerHidden(item, ancestors), isTemplate(item, ancestors))
+  })
   await mkdir(staging, { recursive: true })
   await rm(ws.world, { recursive: true, force: true })
   await rename(staging, ws.world)
@@ -134,15 +138,15 @@ export async function refresh(lk: LegendKeeper, ws: Workspace, resourceIds: stri
     let file = existing?.file
     if (!file) {
       const parent = resource.parentId ? byId.get(resource.parentId) : undefined
-      const dir = parent ? ws.abs(parent.file.replace(/\.md$/, '')) : ws.world
+      const dir = parent ? ws.abs(parent.file.replace(/\.md$/, '')) : resource.parentId === 'templates' ? join(ws.world, '_templates') : ws.world
       let candidate = join(dir, `${safeName(resource.name)}.md`)
       if (existsSync(candidate)) candidate = join(dir, `${safeName(resource.name)} (${id.slice(-6)}).md`)
       file = ws.rel(candidate)
     }
-    const ancestors = chain({ ...entryFor(resource, file, false) }, byId)
-    const entry = entryFor(resource, file, playerHidden(resource, ancestors))
+    const ancestors = chain(entryFor(resource, file, false, false), byId)
+    const entry = entryFor(resource, file, playerHidden(resource, ancestors), isTemplate(resource, ancestors))
     byId.set(id, entry)
-    const rendered = await renderResource(lk, resource, ancestors.map((e) => e.name), entry.playerHidden, (rid) => byId.get(rid)?.name)
+    const rendered = await renderResource(lk, resource, ancestors.map((e) => e.name), entry.playerHidden, entry.template, (rid) => byId.get(rid)?.name)
     await mkdir(dirname(ws.abs(file)), { recursive: true })
     await writeFile(ws.abs(file), rendered.text)
     written.push(file)
@@ -170,6 +174,7 @@ async function renderResource(
   item: ResourceLike,
   path: string[],
   hiddenFromPlayers: boolean,
+  template: boolean,
   nameOf: (id: string) => string | undefined,
 ): Promise<Rendered> {
   const out: Rendered = { text: '', pages: 0, timelines: 0, skipped: [], warnings: [] }
@@ -185,9 +190,8 @@ async function renderResource(
     tabs = [...full.documents].sort((a, b) => ((a.rank ?? '') < (b.rank ?? '') ? -1 : (a.rank ?? '') > (b.rank ?? '') ? 1 : 0))
     for (const doc of full.documents) if (doc.isHidden) hiddenTabs.add(doc.id)
     const properties = (full.properties ?? []) as unknown as Block[]
-    if (properties.length) {
-      sections.push(`## Sidebar\n\n${blocksToMarkdown([{ kind: 'infobox', rows: properties } as Block], { nameOf }).trim()}`)
-    }
+    const sidebar = properties.length ? blocksToMarkdown([{ kind: 'infobox', rows: properties } as Block], { nameOf }).trim() : ''
+    if (sidebar) sections.push(`## Sidebar\n\n${sidebar}`)
   } catch (error) {
     out.warnings.push(`${item.name} (resource): ${(error as Error).message}`)
   }
@@ -229,6 +233,7 @@ async function renderResource(
     aliases: item.aliases,
     hidden: Boolean(item.isHidden),
     playerHidden: hiddenFromPlayers,
+    ...(template ? { template: true } : {}),
     updatedAt: item.updatedAt ?? null,
     documents,
   }
@@ -259,7 +264,7 @@ async function renderTimeline(
 // Helpers
 // ---------------------------------------------------------------------------
 
-function entryFor(item: ResourceLike, file: string, hiddenFromPlayers: boolean): IndexEntry {
+function entryFor(item: ResourceLike, file: string, hiddenFromPlayers: boolean, template: boolean): IndexEntry {
   return {
     id: item.id,
     name: item.name,
@@ -268,8 +273,13 @@ function entryFor(item: ResourceLike, file: string, hiddenFromPlayers: boolean):
     parentId: item.parentId ?? null,
     hidden: Boolean(item.isHidden),
     playerHidden: hiddenFromPlayers,
+    template,
     file,
   }
+}
+
+function isTemplate(item: { parentId?: string | null }, ancestors: { parentId?: string | null; template?: boolean }[]): boolean {
+  return item.parentId === 'templates' || ancestors.some((a) => a.parentId === 'templates' || a.template)
 }
 
 function playerHidden(item: { isHidden?: boolean }, ancestors: { isHidden?: boolean; hidden?: boolean }[]): boolean {
@@ -301,7 +311,7 @@ function chain(entry: IndexEntry, byId: Map<string, IndexEntry>): IndexEntry[] {
 }
 
 /** Mirrors the sidebar tree: a page lives at <parent folder>/<Name>.md, its children in <Name>/. */
-function assignFiles(items: ResourceLike[], byId: Map<string, ResourceLike>, root: string): Map<string, string> {
+function assignFiles(items: ResourceLike[], byId: Map<string, ResourceLike>, root: string, templateRoot: string): Map<string, string> {
   const files = new Map<string, string>()
   const used = new Set<string>()
   const visiting = new Set<string>()
@@ -311,7 +321,7 @@ function assignFiles(items: ResourceLike[], byId: Map<string, ResourceLike>, roo
     if (done) return done
     visiting.add(item.id)
     const parent = item.parentId ? byId.get(item.parentId) : undefined
-    const dir = parent && !visiting.has(parent.id) ? fileFor(parent).replace(/\.md$/, '') : root
+    const dir = parent && !visiting.has(parent.id) ? fileFor(parent).replace(/\.md$/, '') : item.parentId === 'templates' ? templateRoot : root
     let stem = safeName(item.name)
     if (used.has(join(dir, stem).toLowerCase())) stem = `${stem} (${item.id.slice(-6)})`
     used.add(join(dir, stem).toLowerCase())
@@ -335,27 +345,36 @@ function frontmatter(data: Record<string, unknown>): string {
 }
 
 function renderIndex(index: WorldIndex, ws: Workspace): string {
-  const rows = [...index.entries]
-    .sort((a, b) => a.file.localeCompare(b.file))
-    .map((e) => {
-      const link = relative(ws.world, ws.abs(e.file)).split('\\').join('/').replace(/ /g, '%20')
+  const row = (e: IndexEntry) => {
+      const link = mdPath(relative(ws.world, ws.abs(e.file)))
       const extra = [
         e.aliases.length ? `aka ${e.aliases.join(', ')}` : '',
         e.tags.length ? `tags: ${e.tags.join(', ')}` : '',
         e.hidden ? 'HIDDEN' : e.playerHidden ? 'hidden (parent)' : '',
       ].filter(Boolean).join(' · ')
       return `- [${e.name}](${link})${extra ? ` — ${extra}` : ''}`
-    })
+  }
+  const sorted = [...index.entries].sort((a, b) => a.file.localeCompare(b.file))
+  const rows = sorted.filter((e) => !e.template).map(row)
+  const templates = sorted.filter((e) => e.template).map(row)
   const style = index.entries.find((e) => e.tags.includes(STYLE_TAG))
   return [
     `# ${index.projectName}`,
     '',
     `Pulled ${index.pulledAt}. ${index.entries.length} resources.`,
-    style ? `Style guide: [${style.name}](${relative(ws.world, ws.abs(style.file)).split('\\').join('/').replace(/ /g, '%20')})` : `Style guide: none yet. Tag a hidden page "${STYLE_TAG}".`,
+    style ? `Style guide: [${style.name}](${mdPath(relative(ws.world, ws.abs(style.file)))})` : `Style guide: none yet. Tag a hidden page "${STYLE_TAG}".`,
     '',
     ...rows,
     '',
+    ...(templates.length
+      ? ['## Templates', '', 'Page structures for lk_create_pages. Their text is placeholder guidance, never lore.', '', ...templates, '']
+      : []),
   ].join('\n')
+}
+
+/** A relative path usable as a Markdown link target, even with spaces or parentheses. */
+function mdPath(path: string): string {
+  return path.split('\\').join('/').replace(/[ ()]/g, (c) => encodeURIComponent(c).replace('(', '%28').replace(')', '%29'))
 }
 
 async function pool<T>(items: T[], size: number, worker: (item: T) => Promise<void>): Promise<void> {

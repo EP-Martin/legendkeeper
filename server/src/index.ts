@@ -1,12 +1,14 @@
 #!/usr/bin/env node
 // MCP server for the LegendKeeper plugin. Stdio transport; one project per API key.
-import { createHash } from 'node:crypto'
-import { ConflictError, ConnectionError, LegendKeeper, LegendKeeperError } from '@legendkeeper/sdk'
+import { ConnectionError, LegendKeeper, LegendKeeperError } from '@legendkeeper/sdk'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod'
+import { createPages } from './create.js'
+import { digest, isDuplicate, stableId } from './ids.js'
 import { markdownToBlocks } from './markdown.js'
 import { pull, refresh, STYLE_TAG, Workspace } from './mirror.js'
+import { buildResolver as resolverFor } from './resolve.js'
 
 const VERSION = '0.1.0'
 const apiKey = process.env.LEGENDKEEPER_API_KEY?.trim()
@@ -54,64 +56,7 @@ async function run(fn: () => Promise<unknown>): Promise<ToolResult> {
   }
 }
 
-/**
- * Ids derived from the request content make every write retry-safe: sending the same
- * tool call twice reuses the same ids, and the server answers DUPLICATE_ID instead of
- * creating a copy. Idempotency keys derived the same way replay the first response.
- */
-const digest = (...parts: string[]) => createHash('sha256').update(parts.join('\u0000')).digest('hex')
-const stableId = (prefix: string, ...parts: string[]) => `${prefix}${digest(...parts).slice(0, 23)}`
-const idempotencyKey = (...parts: string[]) => `lkp-${digest(...parts).slice(0, 48)}`
-const isDuplicate = (error: unknown) => error instanceof ConflictError && error.code === 'DUPLICATE_ID'
-const CREATE_CHUNK = 25
-const RESOURCE_ID = /^r[A-Za-z0-9]{8,}$/
-
-/**
- * Resolves page names and aliases to resource ids: first the pages created in this call,
- * then the local mirror's index, then a live exact-match search for anything left.
- */
-async function buildResolver(sources: string[], extra = new Map<string, string>()) {
-  const table = new Map<string, Set<string>>()
-  const add = (name: string, id: string) => {
-    const key = name.trim().toLowerCase()
-    if (!table.has(key)) table.set(key, new Set())
-    table.get(key)!.add(id)
-  }
-  const index = await ws.readIndex()
-  for (const entry of index?.entries ?? []) {
-    add(entry.name, entry.id)
-    for (const alias of entry.aliases) add(alias, entry.id)
-  }
-
-  const wanted = new Set<string>()
-  for (const source of sources) {
-    for (const match of source.matchAll(/\[\[([^\]|]+)(?:\|[^\]]+)?\]\]/g)) wanted.add(match[1]!.trim())
-  }
-  for (const name of wanted) {
-    const key = name.toLowerCase()
-    if (extra.has(key) || table.has(key)) continue
-    const hits = await client().search.search({ q: name, limit: 10 })
-    for (const hit of hits.data) {
-      const names = [hit.resource.name, ...((hit.resource as { aliases?: string[] }).aliases ?? [])]
-      if (names.some((n) => n.trim().toLowerCase() === key)) add(name, hit.resource.id)
-    }
-  }
-
-  const ambiguous: string[] = []
-  const resolve = (name: string): string | undefined => {
-    const key = name.trim().toLowerCase()
-    if (extra.has(key)) return extra.get(key)
-    if (RESOURCE_ID.test(name.trim())) return name.trim()
-    const ids = table.get(key)
-    if (!ids) return undefined
-    if (ids.size > 1) {
-      ambiguous.push(name)
-      return undefined
-    }
-    return [...ids][0]
-  }
-  return { resolve, ambiguous }
-}
+const buildResolver = (sources: string[]) => resolverFor(client(), ws, sources)
 
 // ---------------------------------------------------------------------------
 // Tools: reading
@@ -119,13 +64,14 @@ async function buildResolver(sources: string[], extra = new Map<string, string>(
 
 server.registerTool('lk_status', {
   title: 'LegendKeeper status',
-  description: 'Shows the connected LegendKeeper project, the local mirror folder, when it was last pulled, and where the world\'s style guide page is. Call this first in a session.',
+  description: 'Shows the connected LegendKeeper project, the local mirror folder, when it was last pulled, the world\'s style guide page and its page templates. Call this first in a session.',
   inputSchema: {},
   annotations: { readOnlyHint: true },
 }, () => run(async () => {
   const index = await ws.readIndex()
   const project = lk ? await lk.project() : undefined
   const style = index?.entries.find((e) => e.tags.includes(STYLE_TAG))
+  const templates = index?.entries.filter((e) => e.template && e.parentId === 'templates').map((e) => ({ name: e.name, file: e.file }))
   return {
     connected: Boolean(project),
     project: project ? { id: project.id, name: project.name } : null,
@@ -134,6 +80,7 @@ server.registerTool('lk_status', {
       ? { folder: ws.rel(ws.world), index: ws.rel(ws.world) + '/INDEX.md', pulledAt: index.pulledAt, resources: index.entries.length }
       : null,
     styleGuide: style ? { name: style.name, file: style.file } : null,
+    templates: templates?.length ? templates : undefined,
     hint: !project ? 'Set the plugin API key option.' : !index ? 'Run lk_pull to build the local mirror.' : undefined,
   }
 }))
@@ -179,99 +126,37 @@ server.registerTool('lk_search', {
 const pageInput = z.object({
   name: z.string().min(1).describe('Page title.'),
   parent: z.string().optional().describe('Parent page: the name of an existing page, a resource id, or the name of another page in this batch. Omit for the top level.'),
-  tags: z.array(z.string()).default([]),
+  template: z.string().optional().describe('Name of a LegendKeeper template in this world (lk_status lists them) to build the page from. Its sidebar and map tabs are kept; its page tabs are filled from markdown and tabs, and unfilled ones are removed.'),
+  tags: z.array(z.string()).default([]).describe('Tags. With a template, omit to keep the template\'s tags.'),
   aliases: z.array(z.string()).default([]).describe('Other names the page goes by; links and search match them.'),
   hidden: z.boolean().default(false).describe('Hide the whole page from players.'),
-  markdown: z.string().describe('Page body in the plugin Markdown dialect (see the lk-style skill). Do not repeat the title as a heading.'),
+  markdown: z.string().describe('Body of the first tab (a template\'s first tab, e.g. "Overview", or "Main") in the plugin Markdown dialect (see the lk-style skill). Do not repeat the title as a heading.'),
+  tabs: z.array(z.object({
+    name: z.string().min(1).describe('Tab name. With a template, use the template\'s tab names.'),
+    markdown: z.string(),
+    hidden: z.boolean().default(false).describe('Hide this tab from players, e.g. "GM Notes" or "Backstory".'),
+  })).max(4).default([]).describe('Further page tabs after the first.'),
+  sidebar: z.record(z.string(), z.string()).default({}).describe('Template pages only: text for sidebar text fields by title, e.g. {"Summary": "…"}.'),
 })
 
 server.registerTool('lk_create_pages', {
   title: 'Create pages',
-  description: 'Creates up to 100 pages. [[Links]] between pages in the batch resolve, so create related NPCs, places and factions together. Run with dryRun first: it reports unresolved links and conversion warnings without writing anything. Safe to retry: calling again with the same input skips pages already created.',
+  description: 'Creates up to 100 pages, plain or from the world\'s templates. [[Links]] between pages in the batch resolve, so create related NPCs, places and factions together. Run with dryRun first: it reports unresolved links and conversion warnings without writing anything. Safe to retry: calling again with the same input skips work already done.',
   inputSchema: {
     pages: z.array(pageInput).min(1).max(100),
     dryRun: z.boolean().default(false),
   },
   annotations: { readOnlyHint: false, destructiveHint: false },
 }, ({ pages, dryRun }) => run(async () => {
-  const projectId = (await client().project()).id
-  const batch = digest(projectId, JSON.stringify(pages))
-  const ids = new Map<string, string>()
-  for (const page of pages) {
-    const key = page.name.trim().toLowerCase()
-    if (ids.has(key)) throw new Error(`Two pages in the batch are named "${page.name}".`)
-    ids.set(key, stableId('r', batch, key))
-    for (const alias of page.aliases) ids.set(alias.trim().toLowerCase(), ids.get(key)!)
+  const result = await createPages(client(), ws, pages, dryRun)
+  if ('dryRun' in result) return result
+  const mirrored = await refresh(client(), ws, [...result.created, ...result.existing].map((r) => r.id))
+  return {
+    created: result.created,
+    alreadyExisted: result.existing.length ? result.existing : undefined,
+    mirrored,
+    warnings: result.warnings,
   }
-  const { resolve, ambiguous } = await buildResolver(pages.map((p) => p.markdown), ids)
-
-  const warnings: string[] = []
-  const prepared = pages.map((page) => {
-    const parsed = markdownToBlocks(page.markdown, { resolve })
-    warnings.push(...parsed.warnings.map((w) => `${page.name}: ${w}`))
-    let parentId: string | undefined
-    if (page.parent) {
-      parentId = resolve(page.parent)
-      if (!parentId) throw new Error(`Parent "${page.parent}" of "${page.name}" was not found. Pull the mirror or create the parent in this batch.`)
-    }
-    return {
-      id: ids.get(page.name.trim().toLowerCase())!,
-      name: page.name.trim(),
-      ...(parentId ? { parentId } : {}),
-      tags: page.tags,
-      aliases: page.aliases,
-      isHidden: page.hidden,
-      documents: [{ name: 'Main', type: 'page' as const, blocks: parsed.blocks }],
-    }
-  })
-  if (ambiguous.length) warnings.push(`Ambiguous names left as plain text (several pages match): ${[...new Set(ambiguous)].join(', ')}`)
-
-  // createMany requires a parent to come before its children.
-  const order = new Map(prepared.map((p) => [p.id, p]))
-  const sorted: typeof prepared = []
-  const visit = (p: (typeof prepared)[number], seen = new Set<string>()) => {
-    if (sorted.includes(p)) return
-    if (seen.has(p.id)) throw new Error(`Pages "${p.name}" and its parent form a cycle.`)
-    seen.add(p.id)
-    const parent = p.parentId ? order.get(p.parentId) : undefined
-    if (parent) visit(parent, seen)
-    sorted.push(p)
-  }
-  for (const p of prepared) visit(p)
-
-  if (dryRun) {
-    return {
-      dryRun: true,
-      pages: sorted.map((p) => ({ name: p.name, blocks: p.documents[0]!.blocks.length, parent: p.parentId ?? null })),
-      warnings,
-    }
-  }
-  // Chunks keep each request fast; parents sort first, so a chunk's parents already exist.
-  const created: { id: string; name: string }[] = []
-  const existing: { id: string; name: string }[] = []
-  for (let i = 0; i < sorted.length; i += CREATE_CHUNK) {
-    let chunk = sorted.slice(i, i + CREATE_CHUNK)
-    for (let attempt = 0; chunk.length > 0; attempt++) {
-      try {
-        const { resources } = await client().resources.createMany({
-          resources: chunk,
-          idempotencyKey: idempotencyKey(projectId, JSON.stringify(chunk)),
-        })
-        created.push(...resources.map((r) => ({ id: r.id, name: r.name })))
-        break
-      } catch (error) {
-        // A page from an earlier, interrupted run of this same call already exists. Skip it.
-        if (!isDuplicate(error) || attempt >= 2) throw error
-        const dupes = new Set(((error as ConflictError).errors ?? [])
-          .map((e) => /^resources\[(\d+)\]/.exec(e.path)?.[1]).filter((n): n is string => n !== undefined).map(Number))
-        if (dupes.size === 0) throw error
-        existing.push(...chunk.filter((_, j) => dupes.has(j)).map((p) => ({ id: p.id, name: p.name })))
-        chunk = chunk.filter((_, j) => !dupes.has(j))
-      }
-    }
-  }
-  const mirrored = await refresh(client(), ws, [...created, ...existing].map((r) => r.id))
-  return { created, alreadyExisted: existing.length ? existing : undefined, mirrored, warnings }
 }))
 
 server.registerTool('lk_append_to_page', {
