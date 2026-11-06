@@ -36,7 +36,8 @@ Use it when the user says "as a player," "player-safe," "what does the party kno
 In player-safe mode:
 
 - Skip every file whose frontmatter has `playerHidden: true`. That covers hidden pages and everything under them.
-- Ignore everything inside `:::secret` blocks.
+- Ignore everything inside `:::secret` blocks. That includes infobox and sidebar facts hidden from players.
+- Skip every section whose heading ends in `[GM only]`, which marks a hidden tab, down to the next heading of the same level.
 - Ignore timeline events marked `(hidden)`.
 - Don't hint that hidden material exists ("there's more, but it's secret"). Answer from the visible material alone.
 

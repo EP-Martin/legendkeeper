@@ -41190,19 +41190,26 @@ ${renderBlocks(block.children, o)}
   }
 }
 function renderInfobox(rows, o) {
-  const lines = [];
+  const visible = [];
+  const hidden = [];
   for (const row of rows) {
+    const target = row.isHidden ? hidden : visible;
     if (row.kind === "keyValue") {
-      for (const kv of row.rows) lines.push(`${kv.key}: ${renderRuns(kv.content ?? [], o) || kv.text || ""}`);
+      for (const kv of row.rows) target.push(`${kv.key}: ${renderRuns(kv.content ?? [], o) || kv.text || ""}`);
     } else {
       const title = row.title ?? row.kind;
       const body = renderBlock(row, o).replace(/\n+/g, " ").replace(/^- /, "");
-      lines.push(`${title}: ${body}`);
+      target.push(`${title}: ${body}`);
     }
   }
-  return `:::infobox
-${lines.join("\n")}
-:::`;
+  const parts = [];
+  if (visible.length) parts.push(`:::infobox
+${visible.join("\n")}
+:::`);
+  if (hidden.length) parts.push(`:::secret
+${hidden.map((line) => `- ${line}`).join("\n")}
+:::`);
+  return parts.join("\n\n");
 }
 function renderListItem(item, marker, o) {
   const pad = " ".repeat(marker.length);
@@ -41352,8 +41359,10 @@ async function renderResource(lk2, item, path, hiddenFromPlayers, nameOf) {
   const sections = [];
   const documents = [];
   const pageCount = item.documents.filter((d) => d.type === "page").length;
+  const hiddenTabs = /* @__PURE__ */ new Set();
   try {
     const full = await lk2.resources.get({ resourceId: item.id });
+    for (const doc of full.documents) if (doc.isHidden) hiddenTabs.add(doc.id);
     const properties = full.properties ?? [];
     if (properties.length) {
       sections.push(`## Sidebar
@@ -41365,19 +41374,21 @@ ${blocksToMarkdown([{ kind: "infobox", rows: properties }], { nameOf }).trim()}`
   }
   for (const doc of item.documents) {
     const ref = { resourceId: item.id, documentId: doc.id };
-    const summary = { id: doc.id, name: doc.name ?? null, type: doc.type ?? null };
+    const tabHidden = hiddenTabs.has(doc.id);
+    const summary = { id: doc.id, name: doc.name ?? null, type: doc.type ?? null, hidden: tabHidden };
+    const heading = (label) => `## ${label}: ${doc.name ?? "Untitled"}${tabHidden ? " [GM only]" : ""}`;
     try {
       if (doc.type === "page") {
         const content = await lk2.documents.getBlocks(ref);
         documents.push({ ...summary, version: content.version });
         const body = blocksToMarkdown(content.blocks, { nameOf }).trim();
-        sections.push(pageCount > 1 ? `## Tab: ${doc.name ?? "Untitled"}
+        sections.push(pageCount > 1 || tabHidden ? `${heading("Tab")}
 
 ${body}` : body);
         out.pages++;
       } else if (doc.type === "time") {
         documents.push(summary);
-        sections.push(await renderTimeline(lk2, ref, doc.name ?? "Timeline", nameOf));
+        sections.push(await renderTimeline(lk2, ref, heading("Timeline"), nameOf));
         out.timelines++;
       } else {
         documents.push(summary);
@@ -41405,9 +41416,9 @@ ${sections.filter(Boolean).join("\n\n")}
 `;
   return out;
 }
-async function renderTimeline(lk2, ref, title, nameOf) {
+async function renderTimeline(lk2, ref, heading, nameOf) {
   const lanes = new Map((await lk2.timelines.listLanes(ref)).data.map((lane) => [lane.id, lane.name]));
-  const lines = [`## Timeline: ${title}`, ""];
+  const lines = [heading, ""];
   for await (const event of await lk2.timelines.listEvents(ref, { limit: 100 })) {
     const when = event.formattedEnd ? `${event.formattedStart} \u2013 ${event.formattedEnd}` : event.formattedStart;
     const link2 = /^lk:\/\/resources\/([^/]+)/.exec(event.uri ?? "")?.[1];

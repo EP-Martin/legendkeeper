@@ -121,4 +121,12 @@ describe('round trip', () => {
       { mention: { resourceId: 'rGone0001', text: 'Old Tom' } },
     ] })
   })
+
+  it('moves infobox rows hidden from players into a secret block', () => {
+    const rendered = blocksToMarkdown([{ kind: 'infobox', rows: [
+      { kind: 'keyValue', rows: [{ key: 'Role', content: [{ text: 'Innkeeper' }] }] },
+      { kind: 'keyValue', isHidden: true, rows: [{ key: 'True name', content: [{ text: 'Sela' }] }] },
+    ] } as never], { nameOf })
+    expect(rendered.trim()).toBe(':::infobox\nRole: Innkeeper\n:::\n\n:::secret\n- True name: Sela\n:::')
+  })
 })

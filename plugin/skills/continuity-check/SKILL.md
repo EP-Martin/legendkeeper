@@ -36,7 +36,7 @@ Find the evidence in the mirror the way `/legendkeeper:ask-world` does: index, s
 | --- | --- |
 | **Contradiction** | A page says otherwise. Quote both sides. |
 | **Timeline error** | The order or dates don't fit the timeline or stated ages. Show the arithmetic. |
-| **Knowledge leak** | A character acts on something from a `:::secret` block or a hidden page that they have no in-story way to know. |
+| **Knowledge leak** | A character acts on something from a `:::secret` block, a `[GM only]` tab or a hidden page that they have no in-story way to know. |
 | **Unknown name** | Not in the world. Note whether it's probably a misspelling of an existing name ("Thornwik" → [[Thornwick]]) or new. |
 | **New fact** | Consistent but not yet recorded. Not an error; offer to add it. |
 | **Consistent** | Supported. Don't list these unless the user asks. |

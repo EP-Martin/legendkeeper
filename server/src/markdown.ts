@@ -385,17 +385,23 @@ function renderBlock(block: Block, o: RenderOptions): string {
 }
 
 function renderInfobox(rows: Block[], o: RenderOptions): string {
-  const lines: string[] = []
+  // Rows hidden from players move to a secret block after the infobox (containers don't nest).
+  const visible: string[] = []
+  const hidden: string[] = []
   for (const row of rows) {
+    const target = (row as { isHidden?: boolean }).isHidden ? hidden : visible
     if (row.kind === 'keyValue') {
-      for (const kv of row.rows) lines.push(`${kv.key}: ${renderRuns(kv.content ?? [], o) || kv.text || ''}`)
+      for (const kv of row.rows) target.push(`${kv.key}: ${renderRuns(kv.content ?? [], o) || kv.text || ''}`)
     } else {
       const title = (row as { title?: string }).title ?? row.kind
       const body = renderBlock(row, o).replace(/\n+/g, ' ').replace(/^- /, '')
-      lines.push(`${title}: ${body}`)
+      target.push(`${title}: ${body}`)
     }
   }
-  return `:::infobox\n${lines.join('\n')}\n:::`
+  const parts: string[] = []
+  if (visible.length) parts.push(`:::infobox\n${visible.join('\n')}\n:::`)
+  if (hidden.length) parts.push(`:::secret\n${hidden.map((line) => `- ${line}`).join('\n')}\n:::`)
+  return parts.join('\n\n')
 }
 
 function renderListItem(item: Block, marker: string, o: RenderOptions): string {

@@ -11,7 +11,8 @@
 - [ ] Calibrate the default page shapes and style guide against LegendKeeper's two sample projects (`plugin/skills/lk-style/page-shapes.md`, `plugin/skills/setup/style-guide-template.md`).
 - [ ] Run `lk_pull` against both samples; fix rendering gaps in `server/src/markdown.ts` (blocks shown as `<!-- lk: ... -->`).
 - [ ] Confirm that a block read from `getBlocks` round-trips through Markdown into `replaceBlocks` without validation errors.
-- [ ] Measure pull time and request count on a large world. Check whether `resources.list` `updatedAt` changes on content edits; if so, make pulls incremental.
+- [ ] Measure pull time and request count on a large world. Make pulls incremental: `resources.get` returns each tab's `updatedAt`; check whether it changes on content edits.
+- [ ] Check whether per-resource `permissions` can hide a page from players in a way `isHidden` doesn't; if so, fold it into `playerHidden`.
 - [ ] Confirm whether children of a hidden resource are hidden from players in the app (the mirror assumes they are: `playerHidden`).
 - [ ] Confirm that a `formattedStart` in a custom calendar parses as expected.
 

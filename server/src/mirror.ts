@@ -174,11 +174,14 @@ async function renderResource(
 ): Promise<Rendered> {
   const out: Rendered = { text: '', pages: 0, timelines: 0, skipped: [], warnings: [] }
   const sections: string[] = []
-  const documents: { id: string; name: string | null; type: string | null; version?: string }[] = []
+  const documents: { id: string; name: string | null; type: string | null; hidden: boolean; version?: string }[] = []
   const pageCount = item.documents.filter((d) => d.type === 'page').length
+  // List items lack per-tab flags; the full resource has them.
+  const hiddenTabs = new Set<string>()
 
   try {
     const full = await lk.resources.get({ resourceId: item.id })
+    for (const doc of full.documents) if (doc.isHidden) hiddenTabs.add(doc.id)
     const properties = (full.properties ?? []) as unknown as Block[]
     if (properties.length) {
       sections.push(`## Sidebar\n\n${blocksToMarkdown([{ kind: 'infobox', rows: properties } as Block], { nameOf }).trim()}`)
@@ -189,17 +192,19 @@ async function renderResource(
 
   for (const doc of item.documents) {
     const ref = { resourceId: item.id, documentId: doc.id }
-    const summary = { id: doc.id, name: doc.name ?? null, type: doc.type ?? null }
+    const tabHidden = hiddenTabs.has(doc.id)
+    const summary = { id: doc.id, name: doc.name ?? null, type: doc.type ?? null, hidden: tabHidden }
+    const heading = (label: string) => `## ${label}: ${doc.name ?? 'Untitled'}${tabHidden ? ' [GM only]' : ''}`
     try {
       if (doc.type === 'page') {
         const content = await lk.documents.getBlocks(ref)
         documents.push({ ...summary, version: content.version })
         const body = blocksToMarkdown(content.blocks, { nameOf }).trim()
-        sections.push(pageCount > 1 ? `## Tab: ${doc.name ?? 'Untitled'}\n\n${body}` : body)
+        sections.push(pageCount > 1 || tabHidden ? `${heading('Tab')}\n\n${body}` : body)
         out.pages++
       } else if (doc.type === 'time') {
         documents.push(summary)
-        sections.push(await renderTimeline(lk, ref, doc.name ?? 'Timeline', nameOf))
+        sections.push(await renderTimeline(lk, ref, heading('Timeline'), nameOf))
         out.timelines++
       } else {
         documents.push(summary)
@@ -228,11 +233,11 @@ async function renderResource(
 async function renderTimeline(
   lk: LegendKeeper,
   ref: { resourceId: string; documentId: string },
-  title: string,
+  heading: string,
   nameOf: (id: string) => string | undefined,
 ): Promise<string> {
   const lanes = new Map((await lk.timelines.listLanes(ref)).data.map((lane) => [lane.id, lane.name]))
-  const lines = [`## Timeline: ${title}`, '']
+  const lines = [heading, '']
   for await (const event of await lk.timelines.listEvents(ref, { limit: 100 })) {
     const when = event.formattedEnd ? `${event.formattedStart} – ${event.formattedEnd}` : event.formattedStart
     const link = /^lk:\/\/resources\/([^/]+)/.exec(event.uri ?? '')?.[1]
