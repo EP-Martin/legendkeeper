@@ -175,22 +175,25 @@ async function renderResource(
   const out: Rendered = { text: '', pages: 0, timelines: 0, skipped: [], warnings: [] }
   const sections: string[] = []
   const documents: { id: string; name: string | null; type: string | null; hidden: boolean; version?: string }[] = []
-  const pageCount = item.documents.filter((d) => d.type === 'page').length
-  // List items lack per-tab flags; the full resource has them.
   const hiddenTabs = new Set<string>()
+  // List items are unreliable for older projects: their documents can be missing or have a
+  // null type. The full resource is authoritative, so read tabs (and their flags) from it.
+  let tabs = item.documents
 
   try {
     const full = await lk.resources.get({ resourceId: item.id })
+    tabs = [...full.documents].sort((a, b) => ((a.rank ?? '') < (b.rank ?? '') ? -1 : (a.rank ?? '') > (b.rank ?? '') ? 1 : 0))
     for (const doc of full.documents) if (doc.isHidden) hiddenTabs.add(doc.id)
     const properties = (full.properties ?? []) as unknown as Block[]
     if (properties.length) {
       sections.push(`## Sidebar\n\n${blocksToMarkdown([{ kind: 'infobox', rows: properties } as Block], { nameOf }).trim()}`)
     }
   } catch (error) {
-    out.warnings.push(`${item.name} (sidebar): ${(error as Error).message}`)
+    out.warnings.push(`${item.name} (resource): ${(error as Error).message}`)
   }
+  const pageCount = tabs.filter((d) => d.type === 'page').length
 
-  for (const doc of item.documents) {
+  for (const doc of tabs) {
     const ref = { resourceId: item.id, documentId: doc.id }
     const tabHidden = hiddenTabs.has(doc.id)
     const summary = { id: doc.id, name: doc.name ?? null, type: doc.type ?? null, hidden: tabHidden }

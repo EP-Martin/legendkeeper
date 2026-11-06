@@ -129,4 +129,13 @@ describe('round trip', () => {
     ] } as never], { nameOf })
     expect(rendered.trim()).toBe(':::infobox\nRole: Innkeeper\n:::\n\n:::secret\n- True name: Sela\n:::')
   })
+
+  it('drops unreadable sidebar widgets and humanizes legacy property titles', () => {
+    const rendered = blocksToMarkdown([{ kind: 'infobox', rows: [
+      { kind: 'image', title: 'IMAGE', url: 'https://assets.legendkeeper.com/a.jpg' },
+      { kind: 'unsupported', id: 'x' },
+      { kind: 'keyValue', title: 'PIN APPEARANCE', rows: [{ key: 'Size', content: [{ text: 'Large' }] }] },
+    ] } as never], { nameOf })
+    expect(rendered.trim()).toBe(':::infobox\nImage: ![Image](https://assets.legendkeeper.com/a.jpg)\nSize: Large\n:::')
+  })
 })

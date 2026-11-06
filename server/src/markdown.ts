@@ -389,12 +389,14 @@ function renderInfobox(rows: Block[], o: RenderOptions): string {
   const visible: string[] = []
   const hidden: string[] = []
   for (const row of rows) {
+    // Built-in widgets such as Tags and Mentioned In read as unsupported; they add nothing.
+    if (row.kind === 'unsupported') continue
     const target = (row as { isHidden?: boolean }).isHidden ? hidden : visible
     if (row.kind === 'keyValue') {
       for (const kv of row.rows) target.push(`${kv.key}: ${renderRuns(kv.content ?? [], o) || kv.text || ''}`)
     } else {
-      const title = (row as { title?: string }).title ?? row.kind
-      const body = renderBlock(row, o).replace(/\n+/g, ' ').replace(/^- /, '')
+      const title = propertyTitle((row as { title?: string }).title ?? row.kind)
+      const body = (row.kind === 'image' ? `![${title}](${row.url})` : renderBlock(row, o)).replace(/\n+/g, ' ').replace(/^- /, '')
       target.push(`${title}: ${body}`)
     }
   }
@@ -402,6 +404,13 @@ function renderInfobox(rows: Block[], o: RenderOptions): string {
   if (visible.length) parts.push(`:::infobox\n${visible.join('\n')}\n:::`)
   if (hidden.length) parts.push(`:::secret\n${hidden.map((line) => `- ${line}`).join('\n')}\n:::`)
   return parts.join('\n\n')
+}
+
+/** Legacy property titles come through as IMAGE or MENTIONED_IN; show them as words. */
+function propertyTitle(title: string): string {
+  if (!/^[A-Z0-9_ ]+$/.test(title)) return title
+  const words = title.replace(/_/g, ' ').toLowerCase().trim()
+  return words.charAt(0).toUpperCase() + words.slice(1)
 }
 
 function renderListItem(item: Block, marker: string, o: RenderOptions): string {

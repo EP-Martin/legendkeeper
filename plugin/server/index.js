@@ -41193,12 +41193,13 @@ function renderInfobox(rows, o) {
   const visible = [];
   const hidden = [];
   for (const row of rows) {
+    if (row.kind === "unsupported") continue;
     const target = row.isHidden ? hidden : visible;
     if (row.kind === "keyValue") {
       for (const kv of row.rows) target.push(`${kv.key}: ${renderRuns(kv.content ?? [], o) || kv.text || ""}`);
     } else {
-      const title = row.title ?? row.kind;
-      const body = renderBlock(row, o).replace(/\n+/g, " ").replace(/^- /, "");
+      const title = propertyTitle(row.title ?? row.kind);
+      const body = (row.kind === "image" ? `![${title}](${row.url})` : renderBlock(row, o)).replace(/\n+/g, " ").replace(/^- /, "");
       target.push(`${title}: ${body}`);
     }
   }
@@ -41210,6 +41211,11 @@ ${visible.join("\n")}
 ${hidden.map((line) => `- ${line}`).join("\n")}
 :::`);
   return parts.join("\n\n");
+}
+function propertyTitle(title) {
+  if (!/^[A-Z0-9_ ]+$/.test(title)) return title;
+  const words = title.replace(/_/g, " ").toLowerCase().trim();
+  return words.charAt(0).toUpperCase() + words.slice(1);
 }
 function renderListItem(item, marker, o) {
   const pad = " ".repeat(marker.length);
@@ -41358,10 +41364,11 @@ async function renderResource(lk2, item, path, hiddenFromPlayers, nameOf) {
   const out = { text: "", pages: 0, timelines: 0, skipped: [], warnings: [] };
   const sections = [];
   const documents = [];
-  const pageCount = item.documents.filter((d) => d.type === "page").length;
   const hiddenTabs = /* @__PURE__ */ new Set();
+  let tabs = item.documents;
   try {
     const full = await lk2.resources.get({ resourceId: item.id });
+    tabs = [...full.documents].sort((a3, b) => (a3.rank ?? "") < (b.rank ?? "") ? -1 : (a3.rank ?? "") > (b.rank ?? "") ? 1 : 0);
     for (const doc of full.documents) if (doc.isHidden) hiddenTabs.add(doc.id);
     const properties = full.properties ?? [];
     if (properties.length) {
@@ -41370,9 +41377,10 @@ async function renderResource(lk2, item, path, hiddenFromPlayers, nameOf) {
 ${blocksToMarkdown([{ kind: "infobox", rows: properties }], { nameOf }).trim()}`);
     }
   } catch (error62) {
-    out.warnings.push(`${item.name} (sidebar): ${error62.message}`);
+    out.warnings.push(`${item.name} (resource): ${error62.message}`);
   }
-  for (const doc of item.documents) {
+  const pageCount = tabs.filter((d) => d.type === "page").length;
+  for (const doc of tabs) {
     const ref = { resourceId: item.id, documentId: doc.id };
     const tabHidden = hiddenTabs.has(doc.id);
     const summary = { id: doc.id, name: doc.name ?? null, type: doc.type ?? null, hidden: tabHidden };

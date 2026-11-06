@@ -57,3 +57,5 @@ She sells the harbor schedules to [[Captain Ilse Marr]].
 ## Not supported yet
 
 Images, maps, embeds, collections and layout columns can't be written. The mirror shows them as comments such as `<!-- lk: embedded map -->`. Appending to a page never touches them.
+
+`<!-- lk: content the API cannot read -->` marks a block that LegendKeeper's API doesn't expose, such as a 5e stat block or a legacy child-page list. Its content is real but invisible to Claude. Never report it as missing information or a continuity gap; say the page has content that can only be read in LegendKeeper.
