@@ -8,7 +8,9 @@
 
 ## Needs a live LegendKeeper project
 
-- [ ] Calibrate the default page shapes and style guide against LegendKeeper's two sample projects (`plugin/skills/lk-style/page-shapes.md`, `plugin/skills/setup/style-guide-template.md`).
+- [x] Calibrate page shapes and the style guide template against the two sample projects and LegendKeeper's twelve built-in templates. Pages are now built from the world's own templates; the plugin's shapes are the fallback.
+- [ ] Run a full ingest (scans → plan → drafts → apply) end to end on a real set of session notes.
+- [ ] Write sidebar properties on plain pages too (`properties.create`), so fallback pages can match template pages.
 - [x] Run `lk_pull` against both samples; fix rendering gaps. Remaining `<!-- lk: content the API cannot read -->` blocks (stat blocks, legacy child lists) are an API limit.
 - [x] Round-trip every sample page through Markdown and back: 95/97 identical, the other 2 differ by one space.
 - [x] Measure pulls: about 3 requests per resource, 10 s for 50 resources. `updatedAt` on resources and tabs does not change on content edits, so pulls stay full.
@@ -24,5 +26,4 @@
 - [ ] Verify how users re-enter a sensitive `userConfig` value (the setup skill's wording).
 - [ ] Images: upload scans or portraits through `assets.uploadImage` and support `![](...)` in the dialect.
 - [ ] Mirror map pins (names, links) and board text.
-- [ ] Templates: create pages from LegendKeeper templates where a world has them.
 - [ ] Decide whether to submit to Anthropic's plugin directory; that needs icon, support and privacy URLs in `plugin.json`.

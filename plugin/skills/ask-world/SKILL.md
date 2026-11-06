@@ -15,7 +15,8 @@ Answers come from the local mirror (`legendkeeper/world/`), not from memory or i
 
 ## Find the evidence
 
-1. Look up names, aliases and tags in `legendkeeper/world/INDEX.md`.
+1. Look up names, aliases and tags in `legendkeeper/world/INDEX.md`. Ignore its Templates section and everything in `_templates/`: template text is placeholder guidance, never lore.
+   A `<!-- lk: content the API cannot read -->` marker means the page has content, such as a stat block, that only LegendKeeper can show. Say so rather than calling the information missing.
 2. Search the mirror for the key terms, their aliases and obvious variants, and read every file that matches in full. Most answers live in two or three pages.
 3. Follow `[[links]]` one hop out when the question is about relationships, causes or history.
 4. Check timelines (`## Timeline` sections) for "when" and "in what order" questions.

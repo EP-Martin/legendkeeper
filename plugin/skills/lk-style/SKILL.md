@@ -1,6 +1,6 @@
 ---
 name: lk-style
-description: Reference for writing LegendKeeper pages with this plugin. Covers the Markdown dialect the write tools accept, default page shapes for NPCs, places, factions, items and sessions, and how the world's own style guide page overrides them. Load it before drafting or editing any LegendKeeper content.
+description: Reference for writing LegendKeeper pages with this plugin. Covers the Markdown dialect the write tools accept, building pages from the world's own LegendKeeper templates, fallback page shapes, and how the world's style guide page overrides them. Load it before drafting or editing any LegendKeeper content.
 user-invocable: false
 ---
 
@@ -8,9 +8,10 @@ user-invocable: false
 
 ## Precedence
 
-1. **The world's style guide page wins.** It is the page tagged `claude-style` (usually hidden). `lk_status` reports its file in the mirror. Read the whole file before drafting. Follow its voice, page shapes, tree placement, tags and spelling list over anything below.
-2. **The world's existing pages come next.** When the guide is silent, copy the conventions of similar pages in the mirror: section names, infobox keys, tag spelling, where pages sit in the tree.
-3. **The defaults in this skill come last.**
+1. **The world's style guide page wins.** It is the page tagged `claude-style` (usually hidden). `lk_status` reports its file in the mirror. Read the whole file before drafting. Follow its voice, template choices, tree placement, tags and spelling list over anything below.
+2. **The world's LegendKeeper templates come next.** If a template fits the kind of page, build the page from it. See [page-shapes.md](page-shapes.md#use-the-worlds-templates-first).
+3. **Then the world's existing pages.** Copy the conventions of similar pages in the mirror: tabs, section names, sidebar fields, tag spelling, and where pages sit in the tree.
+4. **The fallback shapes in [page-shapes.md](page-shapes.md) come last.**
 
 If no style guide exists, say so once and suggest `/legendkeeper:setup`. Keep working with the defaults.
 
@@ -27,11 +28,11 @@ The write tools convert Markdown to LegendKeeper blocks. The full syntax is in [
 
 ## Page shapes
 
-Default shapes for each kind of page are in [page-shapes.md](page-shapes.md). They are provisional until they are calibrated against LegendKeeper's sample projects.
+[page-shapes.md](page-shapes.md) covers how LegendKeeper pages are built (tabs, sidebar, hidden GM tabs), how to fill a template, the fallback shapes, and the draft file format.
 
 ## Default voice
 
-- Write as the world's reference book: present tense for how things are, past tense for history and session events.
+- Write a GM's working reference: quick to scan at the table. Present tense for how things are, past tense for history and session events. A world written in an in-world voice, such as a scholar's natural history, keeps that voice; match the existing pages.
 - Be concrete. Name the person, the place and the price. Cut anything the notes don't support.
 - Keep sentences varied and short. Avoid filler and stock phrases ("tapestry," "testament," "beacon," "realm," "delve," "nestled," "bustling," "shrouded in mystery").
 - Use American English and Chicago Manual of Style conventions, unless the style guide says otherwise.
@@ -40,4 +41,5 @@ Default shapes for each kind of page are in [page-shapes.md](page-shapes.md). Th
 ## Facts and secrets
 
 - **Style changes the wording, never the facts.** Don't invent motives, histories or relationships to fill out a shape. Leave a section out when there is nothing for it.
-- **Secrets default to secret.** Anything the notes mark as GM-only, and anything that reveals a twist, a hidden identity, a true motive or a plan the players haven't uncovered, goes in a `:::secret` block. When a whole page is about something the players don't know exists, make the page hidden (`hidden: true`). When unsure, hide it and say so in the plan.
+- **Secrets default to secret.** Anything the notes mark as GM-only, and anything that reveals a twist, a hidden identity, a true motive or a plan the players haven't uncovered, goes in the page's hidden GM tab (the template's `Backstory` or `History`, or a `GM Notes` tab). A one-line secret inside visible text can use a `:::secret` block instead. When a whole page is about something the players don't know exists, make the page hidden (`hidden: true`). When unsure, hide it and say so in the plan.
+- **Templates are not lore.** Files under `legendkeeper/world/_templates/` (frontmatter `template: true`) hold structure and instructions. Never cite or copy their text as facts.

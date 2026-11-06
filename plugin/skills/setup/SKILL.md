@@ -25,13 +25,13 @@ The mirror holds every GM secret in plain text. If the workspace is a git reposi
 
 If `lk_status` reports a style guide page, read it and summarize it in a few lines. Ask whether anything needs changing. Changes to an existing guide are made by hand in LegendKeeper, or appended with `lk_append_to_page`.
 
-If there is none, offer to create one. Before asking anything, study the mirror: tree layout, tag vocabulary, infobox keys, the voice of the longest pages, timeline page and lane names, and date formats. Propose answers drawn from the existing world. Then ask the user to confirm or correct them, at most five questions at a time:
+If there is none, offer to create one. Before asking anything, study the mirror: tree layout, tag vocabulary, the templates in `_templates/` (tabs and sidebar fields), tabs and sections of existing pages, the voice of the longest pages, timeline page and lane names, and date formats. Propose answers drawn from the existing world. Then ask the user to confirm or correct them, at most five questions at a time:
 
 1. **Voice:** genre and tone; in-world reference-book voice or GM-facing notes; tense; words and phrasing to avoid.
-2. **Placement:** where NPCs, places, factions, items and session logs go in the tree.
+2. **Placement and templates:** where NPCs, places, factions, items and session logs go in the tree, and which template each one uses.
 3. **Tags:** the tags to use for each kind of page, spelled exactly.
 4. **Time:** the campaign timeline page and its lanes; how in-game dates are written.
-5. **Secrets:** what is always GM-only; whether GM notes sit in secret blocks or in hidden pages.
+5. **Secrets:** what is always GM-only; whether GM notes go in a hidden tab (and its name), in secret blocks or in hidden pages.
 
 Draft the page from [style-guide-template.md](style-guide-template.md), show it to the user, and on approval create it with `lk_create_pages`:
 

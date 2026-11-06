@@ -62,19 +62,7 @@ Write `plans/<slug>.md` from [plan-template.md](plan-template.md). Then tell the
 
 For each checked item, write a draft file:
 
-- **Create:** `drafts/<slug>/<Page Name>.md`, with frontmatter and then the body in the dialect.
-  ```
-  ---
-  name: Mira Vell
-  parent: Characters
-  tags: [NPC, Thornwick]
-  aliases: [Mira]
-  hidden: false
-  ---
-  :::infobox
-  …
-  ```
-  `parent` is an existing page name or another page in the batch. Take tree placement from the style guide, or else from where similar pages live.
+- **Create:** `drafts/<slug>/<Page Name>.md`, in the draft format from the `lk-style` skill's [page-shapes.md](../lk-style/page-shapes.md#draft-file-format): frontmatter (`name`, `parent`, `template`, `tags`, `aliases`, `hidden`), an optional `## Sidebar`, and one `## Tab:` section per tab. Pick the template for each kind as the style guide says, or else the world's template that fits, and read its file in `_templates/` before drafting. `parent` is an existing page name or another page in the batch. Take tree placement from the style guide, or else from where similar pages live.
 - **Append:** `drafts/<slug>/append--<Page Name>.md`, holding only the new section.
 - **Timeline events** stay in the plan's Timeline section.
 
@@ -86,17 +74,17 @@ Then validate every create with **`lk_create_pages` and `dryRun: true`**. Fix ea
 
 Reread every draft and the plan. Then, in this order:
 
-1. `lk_create_pages` with all creates in one call (up to 100 pages; split into more calls if needed, parents first).
+1. `lk_create_pages` with all creates in one call (up to 100 pages; split into more calls if needed, parents first). Map each draft to a page: frontmatter to the page fields, `## Sidebar` lines to `sidebar`, the first tab to `markdown`, later tabs to `tabs`, `[GM only]` to `hidden: true`.
 2. `lk_append_to_page` once per append draft.
 3. `lk_add_timeline_events` for the checked timeline items. Use the timeline page and lane names from the style guide. If there are none, ask once and suggest recording them in the style guide.
 
-After each call, tick the item in the plan and record the created page's id next to it. If a call fails, stop, leave the remaining items unticked, and report the error with its `requestId`. Never retry a failed create under a new name.
+After each call, tick the item in the plan and record the created page's id next to it. If a call fails, stop, leave the remaining items unticked, and report the error with its `requestId`. If the error carries a hint that the write may have completed, repeat the **identical** call once: the tools recognize work already done and skip it. Never retry with changed input or under a new name, because that creates duplicates.
 
 Finally, move the processed files out of `inbox/` into `sources/<slug>/`. Report what changed, with links to the updated mirror files.
 
 ## Rules
 
 - **Invent nothing.** The style guide changes the wording, never the facts. Thin notes make short pages.
-- **Secrets default to secret.** `gm-only` and `unsure` facts go in `:::secret` blocks. A whole page about something the players don't know exists gets `hidden: true`.
+- **Secrets default to secret.** `gm-only` and `unsure` facts go in the page's hidden GM tab, or a `:::secret` block for a single line in visible text. A whole page about something the players don't know exists gets `hidden: true`.
 - **No uncertain readings in pages.** Every `[?…]` in the transcript is resolved in the plan, or the fact stays out of the pages.
 - **The user's spelling wins** once they settle it. Add a new spelling as an alias, and offer to record it in the style guide's names list.

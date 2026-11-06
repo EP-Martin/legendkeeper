@@ -11,18 +11,19 @@
 
 ## Where pages go
 
-| Kind | Parent page | Tags |
-| --- | --- | --- |
-| NPC | [[Characters]] | NPC |
-| Player character | [[Characters]] | PC |
-| Place | under its region, e.g. [[The Saltmarch]] | City, Tavern, … |
-| Faction | [[Factions]] | Faction |
-| Item | [[Items]] | Item |
-| Session log | [[Sessions]] | Session |
+| Kind | Parent page | Template | Tags |
+| --- | --- | --- | --- |
+| NPC | [[NPCs]] | Character | npc |
+| Player character | [[Party]] | Character | pc |
+| Place | under its region, e.g. [[The Saltmarch]] | Location | town, tavern, … |
+| Faction | [[Factions]] | Organization | faction |
+| Item | [[Magic Items]] | Artifact | item |
+| Quest | under its location | Quest | quest |
+| Session log | [[Sessions]] | (none) | session |
 
 ## Page shapes
 
-Changes to the plugin's default shapes, for example "NPC infoboxes also have Alignment" or "no Personality section."
+Changes to the templates or the plugin's fallback shapes, for example "NPCs also get a Stats tab" or "no Routine section."
 
 - …
 
@@ -36,7 +37,7 @@ Changes to the plugin's default shapes, for example "NPC infoboxes also have Ali
 ## Secrets
 
 - Always GM-only: true identities, villain plans, unrevealed treasure, …
-- GM notes go in: secret blocks | hidden pages
+- GM notes go in: the hidden tab (Backstory / History / GM Notes) | secret blocks | hidden pages
 
 ## Names
 

@@ -1,132 +1,88 @@
-# Default page shapes
+# Page shapes
 
-> **Provisional.** These shapes will be recalibrated against LegendKeeper's sample projects. A world's style guide page overrides them.
+Calibrated against LegendKeeper's built-in templates and its two sample projects, *Questing in Selenia* and *Corvus Canticum's Natural History*.
 
-Every shape starts with an infobox for facts a reader looks up at a glance, then body sections. Only include an infobox row or a section the source supports. An NPC met once might be just an infobox and two sentences, and that's correct.
+## What LegendKeeper pages look like
 
-## Character (NPC or PC)
+- **Tabs carry the structure.** A character has `Overview` and `Backstory`; an organization has `Overview`, `Mission`, `Activities` and `Alliances and Rivals`. Each tab holds a few `##` sections.
+- **GM material lives in hidden tabs.** Examples: `Backstory`, `History`, `GM Notes`. Within a visible tab, small secrets use `:::secret` blocks.
+- **The sidebar holds glance facts.** A portrait or logo, a one-line `Summary`, and automatic lists (Friends, Members, Located in) that LegendKeeper fills from links and tags.
+- **Body prose is short and concrete.** Pages run from two paragraphs to a few hundred words. Lists, tables (menus, random tables) and bold lead-ins (`**Ideal:**`) are common. Body infoboxes are rare.
+- **Tags are lowercase nouns** (`town`, `tavern`, `npc`, `flora`), reused across the world.
+- **The tree is a category or geography hierarchy.** Top-level folders (`NPCs`, `Monsters`, `Magic Items`, `Deities`) sit beside the world's geography, with places nested inside places. Adventures nest under their location, and their parts are child pages.
 
-Tags: `NPC` or `PC`, plus role tags the world already uses.
+## Use the world's templates first
 
-```
-:::infobox
-Role: …
-Race / Ancestry: …
-Faction: [[…]]
-Location: [[…]]
-Status: Alive | Dead | Missing | Unknown
-First met: [[Session …]]
-:::
+When the world has a LegendKeeper template for the kind of page (`lk_status` lists them; the files are in `legendkeeper/world/_templates/`):
 
-One-paragraph summary: who they are and why the party cares.
+1. Read the template file. Note its tab names, its `##` sections and its sidebar fields.
+2. Create the page with `template: "<name>"`. Put the first tab's content in `markdown`, and the other tabs in `tabs`, using the template's tab names and its sections as headings. Put short facts in `sidebar` by field title, such as `Summary`.
+3. Leave out a tab or section the notes don't support. Unfilled tabs are removed, because they hold the template's instructions, not lore.
+4. Never copy a template's instruction text ("Your character's physical description…") into a page.
 
-## Appearance
-## Personality
-Voice, mannerisms, what they want.
-## Relationships
-- [[Name]]: how they're connected.
-## History
-## Session appearances
-- [[Session 14]]: what happened.
+## Fallback shapes
 
-:::secret
-Motives, secrets and plans the players don't know.
-:::
-```
+Use these only when the world has no template for the kind and no existing pages to imitate. Without a template there's no sidebar to fill, so put glance facts in an `:::infobox` at the top of the first tab.
 
-## Location
+### Character
 
-Tags: the kind of place (`City`, `Tavern`, `Dungeon`, …). Put it under its containing place in the tree.
+- **Main:** an infobox with the facts the notes give (Role, Ancestry, Location, Faction, Status), then a bold one-line descriptor (`**Female Human Ferryman**`), a quote if the notes have one, and `## Appearance & Quirks` as a short list.
+- **Personality:** `**Ideal:**`, `**Flaw:**` and `**Bond:**` paragraphs, only those the notes support.
+- **GM Notes** (hidden): secrets, true motives and plans.
 
-```
-:::infobox
-Type: …
-Region: [[…]]
-Ruler / Owner: [[…]]
-Population: …
-:::
+### Location
 
-Summary paragraph.
+- **Main:** an infobox (Type, Region, Ruler or Proprietor), a summary paragraph, then `## Description`, `## Notable People`, and `## Rumors and Hooks` where the notes support them. Taverns and shops add `## Menu` or `## Wares` as a table.
+- **GM Notes** (hidden): what's really going on.
 
-## Description
-## Notable people
-## Points of interest
-## History
-## Rumors and hooks
+### Faction
 
-:::secret
-What's really going on here.
-:::
-```
+- **Main:** an infobox (Type, Leader, Base), then `## Overview`, `## Members` and `## Allies and Rivals`.
+- **GM Notes** (hidden): true aims and hidden members.
 
-## Faction
+### Item
 
-```
-:::infobox
-Type: Guild | Cult | Noble house | …
-Leader: [[…]]
-Base: [[…]]
-Goals: …
-:::
+- **Main:** an italic type line (`*Wondrous item, rare*`), a description, then its mechanics as plain paragraphs or a table.
+- **GM Notes** (hidden): origin secrets and curses.
 
-## Overview
-## Members
-## Allies and enemies
-## History
-
-:::secret
-True aims, hidden members.
-:::
-```
-
-## Item
-
-```
-:::infobox
-Type: …
-Owner: [[…]]
-Rarity: …
-:::
-
-## Description
-## Properties
-## History
-```
-
-## Session log
+### Session log
 
 Name it as the world names sessions (default `Session 14`), under the campaign's sessions parent.
 
-```
-:::infobox
-Date (real): 2026-11-06
-Date (in game): …
-Party: [[…]], [[…]]
-Location: [[…]]
-:::
-
-## Summary
-Three to five sentences.
-
-## Events
-- What happened, in order, with [[links]].
-
-## Loot and rewards
-## Open threads
-- [ ] …
-
-:::secret
-GM notes: what the players missed, consequences in motion.
-:::
-```
+- **Main:** an infobox (Date (real), Date (in game), Party, Location), then `## Summary` in three to five sentences, `## Events` as an ordered list with links, `## Loot and Rewards`, and `## Open Threads` as a checklist.
+- **GM Notes** (hidden): what the players missed and the consequences in motion.
 
 ## Appending to an existing page
 
-Add a dated section rather than rewriting:
+Add a self-contained section with its own heading, such as `## Session 14`, followed by a short list of what happened. Appends go to the end of the page's first page tab. Never append a second infobox. A changed fact in an infobox or the sidebar is a **proposal** in the plan for the user to apply.
+
+## Draft file format
+
+Ingest drafts use the mirror's own layout, so a draft reads like a mirror page:
 
 ```
-## Session 14
-- Met the party at [[The Gilded Eel]]; offered passage for 40 crowns.
+---
+name: Sela Varn
+parent: Characters
+template: Character
+tags: [npc]
+aliases: [The Tidewitch]
+hidden: true
+---
+## Sidebar
+
+:::infobox
+Summary: Harbor witch who runs the smuggling at [[Saltmouth Docks]].
+:::
+
+## Tab: Overview
+
+## Description
+…
+
+## Tab: Backstory [GM only]
+
+…
 ```
 
-Appends always go at the end of the page's first page tab, so make each one self-contained, with its own heading. Never append a second infobox. A changed infobox fact is a **proposal** in the plan for the user to apply.
+To build the tool call, use the `## Sidebar` infobox lines for `sidebar`. The first `## Tab:` becomes `markdown`, and each later `## Tab:` becomes an entry in `tabs`. `[GM only]` means `hidden: true`. A draft without `## Tab:` headings is a single-tab page, and its whole body becomes `markdown`.

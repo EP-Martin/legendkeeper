@@ -41,6 +41,8 @@ Find the evidence in the mirror the way `/legendkeeper:ask-world` does: index, s
 | **New fact** | Consistent but not yet recorded. Not an error; offer to add it. |
 | **Consistent** | Supported. Don't list these unless the user asks. |
 
+Never use files in `_templates/` as evidence. A `<!-- lk: content the API cannot read -->` marker is unseen content, not a gap; when it could hold the answer, say so instead of reporting an unknown.
+
 Judge contradictions against the world, not against real-world logic. If the pages say a river flows uphill, it does. When two pages disagree with each other, report that as a separate **world conflict**.
 
 ## Report
