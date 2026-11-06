@@ -100,7 +100,7 @@ function parseMarkdown(source: string, options: ParseOptions, warnings: string[]
 
 /** [[Name|label]] -> [label](lkname:Name) so the lexer carries it as a link. */
 function wikiToLinks(source: string): string {
-  return source.replace(/\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g, (_, name: string, label?: string) =>
+  return source.replace(/(?<!\\)\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g, (_, name: string, label?: string) =>
     `[${(label ?? name).trim()}](${WIKI_SCHEME}${encodeURIComponent(name.trim())})`)
 }
 
@@ -348,7 +348,7 @@ function renderBlock(block: Block, o: RenderOptions): string {
     case 'table':
       return renderTable(block.children, o)
     case 'expand':
-      return `:::expand ${block.title}\n${renderBlocks(block.children, o)}\n:::`
+      return `:::expand ${block.title.trim()}\n${renderBlocks(block.children, o)}\n:::`
     case 'secret':
       return `:::secret\n${renderBlocks(block.children, o)}\n:::`
     case 'layout':
@@ -419,13 +419,13 @@ function renderListItem(item: Block, marker: string, o: RenderOptions): string {
   const [first, ...rest] = item.children
   const head = first ? renderBlock(first, o) : ''
   const tail = rest.map((child) => indent(renderBlock(child, o), pad)).join('\n')
-  return indent(marker + head, pad, true) + (tail ? `\n${tail}` : '')
+  return indent((marker + head).trimEnd(), pad, true) + (tail ? `\n${tail}` : '')
 }
 
 function renderTable(rows: readonly Block[], o: RenderOptions): string {
   const cells = rows.map((row) => row.kind === 'tableRow'
     ? row.children.map((cell) => cell.kind === 'tableCell'
-      ? renderBlocks(cell.children, o).replace(/\n+/g, ' ').replace(/\|/g, '\\|')
+      ? renderBlocks(cell.children, o).replace(/\n+/g, ' ').replace(/\|/g, '\\|').trim()
       : '')
     : [])
   const width = Math.max(1, ...cells.map((row) => row.length))
@@ -435,15 +435,27 @@ function renderTable(rows: readonly Block[], o: RenderOptions): string {
 }
 
 function renderRuns(runs: readonly Run[], o: RenderOptions): string {
-  return runs.map((run) => {
+  // A line break at the edge of a block would render as a literal backslash.
+  let start = 0
+  let end = runs.length
+  while (start < end && 'break' in runs[start]!) start++
+  while (end > start && 'break' in runs[end - 1]!) end--
+  return runs.slice(start, end).map((run) => {
     if ('break' in run) return '\\\n'
     if ('mention' in run) return wikiLink(run.mention.resourceId, run.mention.text, o, run.mention.name)
-    let text = run.code ? `\`${run.text}\`` : escapeText(run.text)
+    // The API also returns run shapes the spec omits, such as inline icons ({ icon: { name } }).
+    // They are decorative, so skip anything without text rather than fail the whole page.
+    if (typeof (run as { text?: unknown }).text !== 'string') return ''
+    // CommonMark ignores emphasis markers next to whitespace ("**Ideal: **"), so keep
+    // leading and trailing spaces outside the markers.
+    const [, lead = '', core = '', trail = ''] = /^(\s*)([\s\S]*?)(\s*)$/.exec(run.text) ?? []
+    if (!core) return run.text
+    let text = run.code ? `\`${core}\`` : escapeText(core)
     if (run.bold) text = `**${text}**`
     if (run.italic) text = `*${text}*`
     if (run.strike) text = `~~${text}~~`
     if (run.link) text = `[${text}](${run.link})`
-    return text
+    return lead + text + trail
   }).join('')
 }
 
@@ -454,7 +466,8 @@ function wikiLink(resourceId: string, label: string | undefined, o: RenderOption
 }
 
 function escapeText(text: string): string {
-  return text.replace(/([\\*_`[\]])/g, '\\$1')
+  // Brackets only need escaping where they would start a link or a [[wikilink]].
+  return text.replace(/([\\*_`])/g, '\\$1').replace(/\[(?=\[)|\](?=[([])/g, '\\$&')
 }
 
 function prefixLines(text: string, prefix: string): string {

@@ -7258,7 +7258,7 @@ var require_dist = __commonJS({
 });
 
 // src/index.ts
-import { randomUUID } from "node:crypto";
+import { createHash } from "node:crypto";
 
 // node_modules/@legendkeeper/sdk/dist/chunk-E7LARCL3.js
 var __defProp2 = Object.defineProperty;
@@ -9793,8 +9793,8 @@ __name(contentTypeOf, "contentTypeOf");
 async function sha256Hex(bytes) {
   const subtle = globalThis.crypto?.subtle;
   if (subtle === void 0) throw new TypeError("crypto.subtle is required to upload an image");
-  const digest = await subtle.digest("SHA-256", bytes);
-  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+  const digest2 = await subtle.digest("SHA-256", bytes);
+  return Array.from(new Uint8Array(digest2), (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 __name(sha256Hex, "sha256Hex");
 async function putToStorage(target, upload, bytes, caller) {
@@ -9842,12 +9842,12 @@ function splitOptions(op, options) {
   const query = {};
   const body = {};
   let ifMatch;
-  let idempotencyKey;
+  let idempotencyKey2;
   let signal;
   const queryKeys = op.queryParams;
   for (const [key, value] of Object.entries(options)) {
     if (key === "ifMatch") ifMatch = typeof value === "string" ? value : void 0;
-    else if (key === "idempotencyKey" && takesIdempotencyKey(op)) idempotencyKey = typeof value === "string" ? value : void 0;
+    else if (key === "idempotencyKey" && takesIdempotencyKey(op)) idempotencyKey2 = typeof value === "string" ? value : void 0;
     else if (key === "signal") signal = isAbortSignal(value) ? value : void 0;
     else if (queryKeys.includes(key)) query[key] = value;
     else body[key] = value;
@@ -9856,7 +9856,7 @@ function splitOptions(op, options) {
     query,
     body: op.hasBody ? body : void 0,
     ifMatch,
-    idempotencyKey,
+    idempotencyKey: idempotencyKey2,
     signal
   };
 }
@@ -9998,10 +9998,10 @@ var LegendKeeper = class {
   async invoke(op, rawPathParams, options) {
     const pathParams = await this.withProjectId(op, rawPathParams);
     const { query, body, ifMatch, idempotencyKey: suppliedKey, signal } = splitOptions(op, options);
-    const idempotencyKey = this.idempotencyKeyFor(op, suppliedKey);
+    const idempotencyKey2 = this.idempotencyKeyFor(op, suppliedKey);
     const send = /* @__PURE__ */ __name((extraQuery = {}) => withRetries({
       method: op.httpMethod,
-      idempotencyKey,
+      idempotencyKey: idempotencyKey2,
       signal
     }, this.config.maxRetries, () => sendOnce(this.config, {
       method: op.httpMethod,
@@ -10014,7 +10014,7 @@ var LegendKeeper = class {
       body,
       headers: {
         "if-match": ifMatch,
-        [IDEMPOTENCY_KEY_HEADER]: idempotencyKey
+        [IDEMPOTENCY_KEY_HEADER]: idempotencyKey2
       },
       signal
     })), "send");
@@ -40938,7 +40938,7 @@ function parseMarkdown(source, options, warnings) {
   return blockTokens(new O({ gfm: true }).lex(wikiToLinks(source)), options, warnings);
 }
 function wikiToLinks(source) {
-  return source.replace(/\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g, (_2, name, label) => `[${(label ?? name).trim()}](${WIKI_SCHEME}${encodeURIComponent(name.trim())})`);
+  return source.replace(/(?<!\\)\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g, (_2, name, label) => `[${(label ?? name).trim()}](${WIKI_SCHEME}${encodeURIComponent(name.trim())})`);
 }
 function inlineMarkdown(source, options, warnings) {
   return inlineTokens(new O({ gfm: true }).inlineTokens(wikiToLinks(source)), {}, options, warnings);
@@ -41151,7 +41151,7 @@ ${block.text}
     case "table":
       return renderTable(block.children, o);
     case "expand":
-      return `:::expand ${block.title}
+      return `:::expand ${block.title.trim()}
 ${renderBlocks(block.children, o)}
 :::`;
     case "secret":
@@ -41223,26 +41223,33 @@ function renderListItem(item, marker, o) {
   const [first, ...rest] = item.children;
   const head = first ? renderBlock(first, o) : "";
   const tail = rest.map((child) => indent(renderBlock(child, o), pad)).join("\n");
-  return indent(marker + head, pad, true) + (tail ? `
+  return indent((marker + head).trimEnd(), pad, true) + (tail ? `
 ${tail}` : "");
 }
 function renderTable(rows, o) {
-  const cells = rows.map((row) => row.kind === "tableRow" ? row.children.map((cell) => cell.kind === "tableCell" ? renderBlocks(cell.children, o).replace(/\n+/g, " ").replace(/\|/g, "\\|") : "") : []);
+  const cells = rows.map((row) => row.kind === "tableRow" ? row.children.map((cell) => cell.kind === "tableCell" ? renderBlocks(cell.children, o).replace(/\n+/g, " ").replace(/\|/g, "\\|").trim() : "") : []);
   const width = Math.max(1, ...cells.map((row) => row.length));
   const line = (row) => `| ${Array.from({ length: width }, (_2, i) => row[i] ?? "").join(" | ")} |`;
   const [header = [], ...body] = cells;
   return [line(header), `|${" --- |".repeat(width)}`, ...body.map(line)].join("\n");
 }
 function renderRuns(runs2, o) {
-  return runs2.map((run2) => {
+  let start = 0;
+  let end = runs2.length;
+  while (start < end && "break" in runs2[start]) start++;
+  while (end > start && "break" in runs2[end - 1]) end--;
+  return runs2.slice(start, end).map((run2) => {
     if ("break" in run2) return "\\\n";
     if ("mention" in run2) return wikiLink(run2.mention.resourceId, run2.mention.text, o, run2.mention.name);
-    let text = run2.code ? `\`${run2.text}\`` : escapeText(run2.text);
+    if (typeof run2.text !== "string") return "";
+    const [, lead = "", core = "", trail = ""] = /^(\s*)([\s\S]*?)(\s*)$/.exec(run2.text) ?? [];
+    if (!core) return run2.text;
+    let text = run2.code ? `\`${core}\`` : escapeText(core);
     if (run2.bold) text = `**${text}**`;
     if (run2.italic) text = `*${text}*`;
     if (run2.strike) text = `~~${text}~~`;
     if (run2.link) text = `[${text}](${run2.link})`;
-    return text;
+    return lead + text + trail;
   }).join("");
 }
 function wikiLink(resourceId, label, o, known) {
@@ -41251,7 +41258,7 @@ function wikiLink(resourceId, label, o, known) {
   return label && label !== name ? `[[${name}|${label}]]` : `[[${name}]]`;
 }
 function escapeText(text) {
-  return text.replace(/([\\*_`[\]])/g, "\\$1");
+  return text.replace(/([\\*_`])/g, "\\$1").replace(/\[(?=\[)|\](?=[([])/g, "\\$&");
 }
 function prefixLines(text, prefix) {
   return text.split("\n").map((line) => line ? prefix + line : prefix.trimEnd()).join("\n");
@@ -41384,7 +41391,10 @@ ${blocksToMarkdown([{ kind: "infobox", rows: properties }], { nameOf }).trim()}`
     const ref = { resourceId: item.id, documentId: doc.id };
     const tabHidden = hiddenTabs.has(doc.id);
     const summary = { id: doc.id, name: doc.name ?? null, type: doc.type ?? null, hidden: tabHidden };
-    const heading = (label) => `## ${label}: ${doc.name ?? "Untitled"}${tabHidden ? " [GM only]" : ""}`;
+    const heading = (label) => {
+      const name = doc.name ?? "Untitled";
+      return `## ${name.toLowerCase() === label.toLowerCase() ? label : `${label}: ${name}`}${tabHidden ? " [GM only]" : ""}`;
+    };
     try {
       if (doc.type === "page") {
         const content = await lk2.documents.getBlocks(ref);
@@ -41538,7 +41548,7 @@ var VERSION = "0.1.0";
 var apiKey = process.env.LEGENDKEEPER_API_KEY?.trim();
 var workspaceEnv = process.env.LEGENDKEEPER_WORKSPACE?.trim();
 var ws = new Workspace(workspaceEnv && !workspaceEnv.includes("${") ? workspaceEnv : process.cwd());
-var lk = apiKey ? new LegendKeeper({ apiKey, maxRetries: 4 }) : void 0;
+var lk = apiKey ? new LegendKeeper({ apiKey, maxRetries: 4, timeoutMs: 12e4 }) : void 0;
 var server = new McpServer({ name: "legendkeeper", version: VERSION });
 function client() {
   if (!lk) throw new Error(`No API key. Set the plugin's "LegendKeeper API key" option (Project Settings \u2192 Developers \u2192 API Keys in LegendKeeper).`);
@@ -41547,11 +41557,13 @@ function client() {
 function ok(data) {
   return { content: [{ type: "text", text: typeof data === "string" ? data : JSON.stringify(data, null, 2) }] };
 }
+var RETRY_HINT = "The write may have completed on the server. Every write tool is safe to call again with exactly the same input: work already done is recognized and skipped.";
 async function run(fn) {
   try {
     return ok(await fn());
   } catch (error62) {
     if (error62 instanceof LegendKeeperError) {
+      const uncertain = error62.code === "IN_PROGRESS" || error62.status >= 500 && error62.status !== 501;
       return {
         isError: true,
         content: [{ type: "text", text: JSON.stringify({
@@ -41559,14 +41571,20 @@ async function run(fn) {
           code: error62.code,
           message: error62.message,
           errors: error62.errors,
-          requestId: error62.requestId
+          requestId: error62.requestId,
+          ...uncertain ? { hint: RETRY_HINT } : {}
         }, null, 2) }]
       };
     }
-    return { isError: true, content: [{ type: "text", text: error62.message }] };
+    const hint = error62 instanceof ConnectionError ? ` ${RETRY_HINT}` : "";
+    return { isError: true, content: [{ type: "text", text: error62.message + hint }] };
   }
 }
-var newResourceId = () => `r${randomUUID().replaceAll("-", "").slice(0, 23)}`;
+var digest = (...parts) => createHash("sha256").update(parts.join("\0")).digest("hex");
+var stableId = (prefix, ...parts) => `${prefix}${digest(...parts).slice(0, 23)}`;
+var idempotencyKey = (...parts) => `lkp-${digest(...parts).slice(0, 48)}`;
+var isDuplicate = (error62) => error62 instanceof ConflictError && error62.code === "DUPLICATE_ID";
+var CREATE_CHUNK = 25;
 var RESOURCE_ID = /^r[A-Za-z0-9]{8,}$/;
 async function buildResolver(sources, extra = /* @__PURE__ */ new Map()) {
   const table3 = /* @__PURE__ */ new Map();
@@ -41668,18 +41686,20 @@ var pageInput = external_exports.object({
 });
 server.registerTool("lk_create_pages", {
   title: "Create pages",
-  description: "Creates up to 100 pages in one all-or-nothing request. [[Links]] between pages in the batch resolve, so create related NPCs, places and factions together. Run with dryRun first: it reports unresolved links and conversion warnings without writing anything.",
+  description: "Creates up to 100 pages. [[Links]] between pages in the batch resolve, so create related NPCs, places and factions together. Run with dryRun first: it reports unresolved links and conversion warnings without writing anything. Safe to retry: calling again with the same input skips pages already created.",
   inputSchema: {
     pages: external_exports.array(pageInput).min(1).max(100),
     dryRun: external_exports.boolean().default(false)
   },
   annotations: { readOnlyHint: false, destructiveHint: false }
 }, ({ pages, dryRun }) => run(async () => {
+  const projectId = (await client().project()).id;
+  const batch = digest(projectId, JSON.stringify(pages));
   const ids = /* @__PURE__ */ new Map();
   for (const page of pages) {
     const key = page.name.trim().toLowerCase();
     if (ids.has(key)) throw new Error(`Two pages in the batch are named "${page.name}".`);
-    ids.set(key, newResourceId());
+    ids.set(key, stableId("r", batch, key));
     for (const alias of page.aliases) ids.set(alias.trim().toLowerCase(), ids.get(key));
   }
   const { resolve, ambiguous } = await buildResolver(pages.map((p2) => p2.markdown), ids);
@@ -41721,13 +41741,33 @@ server.registerTool("lk_create_pages", {
       warnings
     };
   }
-  const { resources } = await client().resources.createMany({ resources: sorted });
-  const mirrored = await refresh(client(), ws, resources.map((r) => r.id));
-  return { created: resources.map((r) => ({ id: r.id, name: r.name })), mirrored, warnings };
+  const created = [];
+  const existing = [];
+  for (let i = 0; i < sorted.length; i += CREATE_CHUNK) {
+    let chunk = sorted.slice(i, i + CREATE_CHUNK);
+    for (let attempt = 0; chunk.length > 0; attempt++) {
+      try {
+        const { resources } = await client().resources.createMany({
+          resources: chunk,
+          idempotencyKey: idempotencyKey(projectId, JSON.stringify(chunk))
+        });
+        created.push(...resources.map((r) => ({ id: r.id, name: r.name })));
+        break;
+      } catch (error62) {
+        if (!isDuplicate(error62) || attempt >= 2) throw error62;
+        const dupes = new Set((error62.errors ?? []).map((e) => /^resources\[(\d+)\]/.exec(e.path)?.[1]).filter((n) => n !== void 0).map(Number));
+        if (dupes.size === 0) throw error62;
+        existing.push(...chunk.filter((_2, j2) => dupes.has(j2)).map((p2) => ({ id: p2.id, name: p2.name })));
+        chunk = chunk.filter((_2, j2) => !dupes.has(j2));
+      }
+    }
+  }
+  const mirrored = await refresh(client(), ws, [...created, ...existing].map((r) => r.id));
+  return { created, alreadyExisted: existing.length ? existing : void 0, mirrored, warnings };
 }));
 server.registerTool("lk_append_to_page", {
   title: "Append to page",
-  description: 'Adds Markdown to the end of an existing page without touching what is already there, for example a dated "Session 14" section. Each block is one write, so keep appends to a section at a time.',
+  description: 'Adds Markdown to the end of an existing page without touching what is already there, for example a dated "Session 14" section. Each block is one write, so keep appends to a section at a time. Safe to retry: blocks already appended by the same call are skipped.',
   inputSchema: {
     page: external_exports.string().describe("Page name, alias or resource id."),
     markdown: external_exports.string().min(1),
@@ -41744,14 +41784,24 @@ server.registerTool("lk_append_to_page", {
   if (!doc) throw new Error(`"${resource.name}" has no page tab${document ? ` named "${document}"` : ""} to append to.`);
   const parsed = markdownToBlocks(markdown, { resolve });
   const ref = { resourceId, documentId: doc.id };
+  const call = digest(resourceId, doc.id, markdown);
+  const blocks = parsed.blocks.map((block, i) => ({ ...block, id: stableId("b", call, String(i)) }));
+  let appended = 0;
   if (doc.type === "blank") {
-    await client().documents.replaceBlocks(ref, { blocks: parsed.blocks });
+    await client().documents.replaceBlocks(ref, { blocks });
+    appended = blocks.length;
   } else {
-    let { version: version2 } = await client().documents.getBlocks(ref);
-    for (const block of parsed.blocks) version2 = (await client().blocks.insert(ref, { block, ifMatch: version2 })).version;
+    const current = await client().documents.getBlocks(ref);
+    const present = new Set(current.blocks.map((b) => b.id));
+    let { version: version2 } = current;
+    for (const block of blocks) {
+      if (present.has(block.id)) continue;
+      version2 = (await client().blocks.insert(ref, { block, ifMatch: version2 })).version;
+      appended++;
+    }
   }
   const mirrored = await refresh(client(), ws, [resourceId]);
-  return { page: resource.name, appended: parsed.blocks.length, mirrored, warnings: parsed.warnings };
+  return { page: resource.name, appended, alreadyAppended: blocks.length - appended || void 0, mirrored, warnings: parsed.warnings };
 }));
 server.registerTool("lk_update_page_info", {
   title: "Update page info",
@@ -41779,7 +41829,7 @@ server.registerTool("lk_update_page_info", {
 }));
 server.registerTool("lk_add_timeline_events", {
   title: "Add timeline events",
-  description: `Adds events to a timeline, creating the timeline tab and any missing lanes by name. Dates are written in the timeline's own calendar, e.g. "1042", "Spring 1042" or "March 3rd, 1042"; check an existing event in the mirror for the format.`,
+  description: `Adds events to a timeline, creating the timeline tab and any missing lanes by name. Safe to retry: events already added by the same call are skipped. Dates are written in the timeline's own calendar, e.g. "1042", "Spring 1042" or "March 3rd, 1042"; check an existing event in the mirror for the format.`,
   inputSchema: {
     page: external_exports.string().describe("Name, alias or id of the page that holds (or will hold) the timeline."),
     timeline: external_exports.string().optional().describe('Timeline tab name. Defaults to the first timeline tab, or a new tab named "Timeline".'),
@@ -41811,30 +41861,40 @@ server.registerTool("lk_add_timeline_events", {
     if (lane.rank && lane.rank > lastRank) lastRank = lane.rank;
   }
   const laneFor = async (name) => {
-    const existing = lanes.get(name.toLowerCase());
-    if (existing) return existing;
+    const existing2 = lanes.get(name.toLowerCase());
+    if (existing2) return existing2;
     lastRank = `${lastRank}V`;
     const lane = await lkc.timelines.createLane(ref, { name, rank: lastRank, size: "lg" });
     lanes.set(name.toLowerCase(), lane.id);
     return lane.id;
   };
   const created = [];
+  const existing = [];
   const warnings = [];
-  for (const event of events) {
+  for (const [index, event] of events.entries()) {
     const linkId = event.link ? resolve(event.link) : void 0;
     if (event.link && !linkId) warnings.push(`${event.name}: link "${event.link}" not found; event left unlinked.`);
-    const result = await lkc.timelines.createEvent(ref, {
-      laneId: await laneFor(event.lane),
-      type: event.note ? "note" : "event",
-      name: event.name,
-      formattedStart: event.start,
-      ...event.end ? { formattedEnd: event.end } : {},
-      ...linkId ? { uri: `lk://resources/${linkId}` } : {},
-      ...event.hidden ? { isHidden: true } : {}
-    });
+    const id = stableId("e", doc.id, String(index), JSON.stringify(event));
+    let result;
+    try {
+      result = await lkc.timelines.createEvent(ref, {
+        id,
+        laneId: await laneFor(event.lane),
+        type: event.note ? "note" : "event",
+        name: event.name,
+        formattedStart: event.start,
+        ...event.end ? { formattedEnd: event.end } : {},
+        ...linkId ? { uri: `lk://resources/${linkId}` } : {},
+        ...event.hidden ? { isHidden: true } : {}
+      });
+    } catch (error62) {
+      if (!isDuplicate(error62)) throw error62;
+      existing.push(event.name);
+      continue;
+    }
     created.push({ name: event.name, start: result.formattedStart, end: result.formattedEnd });
   }
   const mirrored = await refresh(lkc, ws, [resourceId]);
-  return { timeline: `${resource.name} / ${doc.name}`, created, mirrored, warnings };
+  return { timeline: `${resource.name} / ${doc.name}`, created, alreadyExisted: existing.length ? existing : void 0, mirrored, warnings };
 }));
 await server.connect(new StdioServerTransport());

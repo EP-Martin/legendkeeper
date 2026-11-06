@@ -138,4 +138,30 @@ describe('round trip', () => {
     ] } as never], { nameOf })
     expect(rendered.trim()).toBe(':::infobox\nImage: ![Image](https://assets.legendkeeper.com/a.jpg)\nSize: Large\n:::')
   })
+
+  it('skips inline icon runs and other run shapes the spec does not list', () => {
+    const rendered = blocksToMarkdown([{ kind: 'paragraph', content: [
+      { icon: { name: 'fas fa-image' } }, { text: ' ' }, { text: 'Image', bold: true }, { text: ' blocks.' },
+    ] } as never], { nameOf })
+    expect(rendered.trim()).toBe(' **Image** blocks.'.trim())
+  })
+
+  it('keeps whitespace outside emphasis so the Markdown parses back to the same marks', () => {
+    const blocks = [{ kind: 'paragraph', content: [{ text: 'Ideal: ', bold: true }, { text: 'A core value.' }] }] as never
+    const rendered = blocksToMarkdown(blocks, { nameOf })
+    expect(rendered.trim()).toBe('**Ideal:** A core value.')
+    expect(markdownToBlocks(rendered, { resolve }).blocks).toEqual([{ kind: 'paragraph', content: [
+      { text: 'Ideal:', bold: true }, { text: ' A core value.' },
+    ] }])
+  })
+
+  it('drops line breaks at the edges of a block and escapes brackets only where they would link', () => {
+    const rendered = blocksToMarkdown([
+      { kind: 'paragraph', content: [{ text: 'Safe haven.' }, { break: true }] },
+      { kind: 'heading', level: 2, content: [{ text: 'GM Notes [GM only]' }] },
+      { kind: 'paragraph', content: [{ text: 'Not a [link](here) or [[wiki]].' }] },
+    ] as never, { nameOf })
+    expect(rendered.trim()).toBe('Safe haven.\n\n## GM Notes [GM only]\n\nNot a [link\\](here) or \\[[wiki]].')
+    expect(markdownToBlocks(rendered, { resolve }).blocks[2]).toEqual({ kind: 'paragraph', content: [{ text: 'Not a [link](here) or [[wiki]].' }] })
+  })
 })

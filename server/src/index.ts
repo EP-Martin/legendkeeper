@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // MCP server for the LegendKeeper plugin. Stdio transport; one project per API key.
-import { randomUUID } from 'node:crypto'
-import { LegendKeeper, LegendKeeperError } from '@legendkeeper/sdk'
+import { createHash } from 'node:crypto'
+import { ConflictError, ConnectionError, LegendKeeper, LegendKeeperError } from '@legendkeeper/sdk'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod'
@@ -13,7 +13,8 @@ const apiKey = process.env.LEGENDKEEPER_API_KEY?.trim()
 // Hosts that cannot substitute ${CLAUDE_PROJECT_DIR} pass it through literally; fall back to cwd.
 const workspaceEnv = process.env.LEGENDKEEPER_WORKSPACE?.trim()
 const ws = new Workspace(workspaceEnv && !workspaceEnv.includes('${') ? workspaceEnv : process.cwd())
-const lk = apiKey ? new LegendKeeper({ apiKey, maxRetries: 4 }) : undefined
+// Large batch writes can take well over the SDK's default 30 s per attempt.
+const lk = apiKey ? new LegendKeeper({ apiKey, maxRetries: 4, timeoutMs: 120_000 }) : undefined
 
 const server = new McpServer({ name: 'legendkeeper', version: VERSION })
 
@@ -32,23 +33,37 @@ function ok(data: unknown): ToolResult {
   return { content: [{ type: 'text', text: typeof data === 'string' ? data : JSON.stringify(data, null, 2) }] }
 }
 
+const RETRY_HINT = 'The write may have completed on the server. Every write tool is safe to call again with exactly the same input: work already done is recognized and skipped.'
+
 async function run(fn: () => Promise<unknown>): Promise<ToolResult> {
   try {
     return ok(await fn())
   } catch (error) {
     if (error instanceof LegendKeeperError) {
+      const uncertain = error.code === 'IN_PROGRESS' || (error.status >= 500 && error.status !== 501)
       return {
         isError: true,
         content: [{ type: 'text', text: JSON.stringify({
           status: error.status, code: error.code, message: error.message, errors: error.errors, requestId: error.requestId,
+          ...(uncertain ? { hint: RETRY_HINT } : {}),
         }, null, 2) }],
       }
     }
-    return { isError: true, content: [{ type: 'text', text: (error as Error).message }] }
+    const hint = error instanceof ConnectionError ? ` ${RETRY_HINT}` : ''
+    return { isError: true, content: [{ type: 'text', text: (error as Error).message + hint }] }
   }
 }
 
-const newResourceId = () => `r${randomUUID().replaceAll('-', '').slice(0, 23)}`
+/**
+ * Ids derived from the request content make every write retry-safe: sending the same
+ * tool call twice reuses the same ids, and the server answers DUPLICATE_ID instead of
+ * creating a copy. Idempotency keys derived the same way replay the first response.
+ */
+const digest = (...parts: string[]) => createHash('sha256').update(parts.join('\u0000')).digest('hex')
+const stableId = (prefix: string, ...parts: string[]) => `${prefix}${digest(...parts).slice(0, 23)}`
+const idempotencyKey = (...parts: string[]) => `lkp-${digest(...parts).slice(0, 48)}`
+const isDuplicate = (error: unknown) => error instanceof ConflictError && error.code === 'DUPLICATE_ID'
+const CREATE_CHUNK = 25
 const RESOURCE_ID = /^r[A-Za-z0-9]{8,}$/
 
 /**
@@ -172,18 +187,20 @@ const pageInput = z.object({
 
 server.registerTool('lk_create_pages', {
   title: 'Create pages',
-  description: 'Creates up to 100 pages in one all-or-nothing request. [[Links]] between pages in the batch resolve, so create related NPCs, places and factions together. Run with dryRun first: it reports unresolved links and conversion warnings without writing anything.',
+  description: 'Creates up to 100 pages. [[Links]] between pages in the batch resolve, so create related NPCs, places and factions together. Run with dryRun first: it reports unresolved links and conversion warnings without writing anything. Safe to retry: calling again with the same input skips pages already created.',
   inputSchema: {
     pages: z.array(pageInput).min(1).max(100),
     dryRun: z.boolean().default(false),
   },
   annotations: { readOnlyHint: false, destructiveHint: false },
 }, ({ pages, dryRun }) => run(async () => {
+  const projectId = (await client().project()).id
+  const batch = digest(projectId, JSON.stringify(pages))
   const ids = new Map<string, string>()
   for (const page of pages) {
     const key = page.name.trim().toLowerCase()
     if (ids.has(key)) throw new Error(`Two pages in the batch are named "${page.name}".`)
-    ids.set(key, newResourceId())
+    ids.set(key, stableId('r', batch, key))
     for (const alias of page.aliases) ids.set(alias.trim().toLowerCase(), ids.get(key)!)
   }
   const { resolve, ambiguous } = await buildResolver(pages.map((p) => p.markdown), ids)
@@ -229,14 +246,37 @@ server.registerTool('lk_create_pages', {
       warnings,
     }
   }
-  const { resources } = await client().resources.createMany({ resources: sorted })
-  const mirrored = await refresh(client(), ws, resources.map((r) => r.id))
-  return { created: resources.map((r) => ({ id: r.id, name: r.name })), mirrored, warnings }
+  // Chunks keep each request fast; parents sort first, so a chunk's parents already exist.
+  const created: { id: string; name: string }[] = []
+  const existing: { id: string; name: string }[] = []
+  for (let i = 0; i < sorted.length; i += CREATE_CHUNK) {
+    let chunk = sorted.slice(i, i + CREATE_CHUNK)
+    for (let attempt = 0; chunk.length > 0; attempt++) {
+      try {
+        const { resources } = await client().resources.createMany({
+          resources: chunk,
+          idempotencyKey: idempotencyKey(projectId, JSON.stringify(chunk)),
+        })
+        created.push(...resources.map((r) => ({ id: r.id, name: r.name })))
+        break
+      } catch (error) {
+        // A page from an earlier, interrupted run of this same call already exists. Skip it.
+        if (!isDuplicate(error) || attempt >= 2) throw error
+        const dupes = new Set(((error as ConflictError).errors ?? [])
+          .map((e) => /^resources\[(\d+)\]/.exec(e.path)?.[1]).filter((n): n is string => n !== undefined).map(Number))
+        if (dupes.size === 0) throw error
+        existing.push(...chunk.filter((_, j) => dupes.has(j)).map((p) => ({ id: p.id, name: p.name })))
+        chunk = chunk.filter((_, j) => !dupes.has(j))
+      }
+    }
+  }
+  const mirrored = await refresh(client(), ws, [...created, ...existing].map((r) => r.id))
+  return { created, alreadyExisted: existing.length ? existing : undefined, mirrored, warnings }
 }))
 
 server.registerTool('lk_append_to_page', {
   title: 'Append to page',
-  description: 'Adds Markdown to the end of an existing page without touching what is already there, for example a dated "Session 14" section. Each block is one write, so keep appends to a section at a time.',
+  description: 'Adds Markdown to the end of an existing page without touching what is already there, for example a dated "Session 14" section. Each block is one write, so keep appends to a section at a time. Safe to retry: blocks already appended by the same call are skipped.',
   inputSchema: {
     page: z.string().describe('Page name, alias or resource id.'),
     markdown: z.string().min(1),
@@ -254,14 +294,24 @@ server.registerTool('lk_append_to_page', {
 
   const parsed = markdownToBlocks(markdown, { resolve })
   const ref = { resourceId, documentId: doc.id }
+  const call = digest(resourceId, doc.id, markdown)
+  const blocks = parsed.blocks.map((block, i) => ({ ...block, id: stableId('b', call, String(i)) }))
+  let appended = 0
   if (doc.type === 'blank') {
-    await client().documents.replaceBlocks(ref, { blocks: parsed.blocks })
+    await client().documents.replaceBlocks(ref, { blocks })
+    appended = blocks.length
   } else {
-    let { version } = await client().documents.getBlocks(ref)
-    for (const block of parsed.blocks) version = (await client().blocks.insert(ref, { block, ifMatch: version })).version
+    const current = await client().documents.getBlocks(ref)
+    const present = new Set(current.blocks.map((b) => b.id))
+    let { version } = current
+    for (const block of blocks) {
+      if (present.has(block.id)) continue
+      version = (await client().blocks.insert(ref, { block, ifMatch: version })).version
+      appended++
+    }
   }
   const mirrored = await refresh(client(), ws, [resourceId])
-  return { page: resource.name, appended: parsed.blocks.length, mirrored, warnings: parsed.warnings }
+  return { page: resource.name, appended, alreadyAppended: blocks.length - appended || undefined, mirrored, warnings: parsed.warnings }
 }))
 
 server.registerTool('lk_update_page_info', {
@@ -289,7 +339,7 @@ server.registerTool('lk_update_page_info', {
 
 server.registerTool('lk_add_timeline_events', {
   title: 'Add timeline events',
-  description: 'Adds events to a timeline, creating the timeline tab and any missing lanes by name. Dates are written in the timeline\'s own calendar, e.g. "1042", "Spring 1042" or "March 3rd, 1042"; check an existing event in the mirror for the format.',
+  description: 'Adds events to a timeline, creating the timeline tab and any missing lanes by name. Safe to retry: events already added by the same call are skipped. Dates are written in the timeline\'s own calendar, e.g. "1042", "Spring 1042" or "March 3rd, 1042"; check an existing event in the mirror for the format.',
   inputSchema: {
     page: z.string().describe('Name, alias or id of the page that holds (or will hold) the timeline.'),
     timeline: z.string().optional().describe('Timeline tab name. Defaults to the first timeline tab, or a new tab named "Timeline".'),
@@ -333,11 +383,16 @@ server.registerTool('lk_add_timeline_events', {
   }
 
   const created: { name: string; start?: string; end?: string }[] = []
+  const existing: string[] = []
   const warnings: string[] = []
-  for (const event of events) {
+  for (const [index, event] of events.entries()) {
     const linkId = event.link ? resolve(event.link) : undefined
     if (event.link && !linkId) warnings.push(`${event.name}: link "${event.link}" not found; event left unlinked.`)
-    const result = await lkc.timelines.createEvent(ref, {
+    const id = stableId('e', doc.id, String(index), JSON.stringify(event))
+    let result
+    try {
+      result = await lkc.timelines.createEvent(ref, {
+      id,
       laneId: await laneFor(event.lane),
       type: event.note ? 'note' : 'event',
       name: event.name,
@@ -345,11 +400,16 @@ server.registerTool('lk_add_timeline_events', {
       ...(event.end ? { formattedEnd: event.end } : {}),
       ...(linkId ? { uri: `lk://resources/${linkId}` } : {}),
       ...(event.hidden ? { isHidden: true } : {}),
-    })
+      })
+    } catch (error) {
+      if (!isDuplicate(error)) throw error
+      existing.push(event.name)
+      continue
+    }
     created.push({ name: event.name, start: result.formattedStart, end: result.formattedEnd })
   }
   const mirrored = await refresh(lkc, ws, [resourceId])
-  return { timeline: `${resource.name} / ${doc.name}`, created, mirrored, warnings }
+  return { timeline: `${resource.name} / ${doc.name}`, created, alreadyExisted: existing.length ? existing : undefined, mirrored, warnings }
 }))
 
 await server.connect(new StdioServerTransport())

@@ -15,7 +15,7 @@ Call `lk_status`.
 
 ## 2. Pull
 
-Call `lk_pull`. Report how many resources, pages and timelines it mirrored, and anything it couldn't mirror (maps and boards aren't mirrored yet).
+Call `lk_pull`. Report how many resources, pages and timelines it mirrored, and anything it couldn't mirror (maps and boards aren't mirrored yet). A pull costs about three API requests per page: a few seconds for a small world, about ten minutes for a thousand pages. So pull at the start of a session, not before every question.
 
 ## 3. Protect secrets
 

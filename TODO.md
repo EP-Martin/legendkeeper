@@ -9,12 +9,14 @@
 ## Needs a live LegendKeeper project
 
 - [ ] Calibrate the default page shapes and style guide against LegendKeeper's two sample projects (`plugin/skills/lk-style/page-shapes.md`, `plugin/skills/setup/style-guide-template.md`).
-- [ ] Run `lk_pull` against both samples; fix rendering gaps in `server/src/markdown.ts` (blocks shown as `<!-- lk: ... -->`).
-- [ ] Confirm that a block read from `getBlocks` round-trips through Markdown into `replaceBlocks` without validation errors.
-- [ ] Measure pull time and request count on a large world. Make pulls incremental: `resources.get` returns each tab's `updatedAt`; check whether it changes on content edits.
+- [x] Run `lk_pull` against both samples; fix rendering gaps. Remaining `<!-- lk: content the API cannot read -->` blocks (stat blocks, legacy child lists) are an API limit.
+- [x] Round-trip every sample page through Markdown and back: 95/97 identical, the other 2 differ by one space.
+- [x] Measure pulls: about 3 requests per resource, 10 s for 50 resources. `updatedAt` on resources and tabs does not change on content edits, so pulls stay full.
+- [ ] Speed up large pulls: skip `getBlocks` when a tab's block `version` is unchanged (needs a cheap way to read versions).
+- [ ] Report to LegendKeeper: inline icon runs (`{ icon: { name } }`) are returned but missing from the v3 spec and SDK types.
 - [ ] Check whether per-resource `permissions` can hide a page from players in a way `isHidden` doesn't; if so, fold it into `playerHidden`.
-- [ ] Confirm whether children of a hidden resource are hidden from players in the app (the mirror assumes they are: `playerHidden`).
-- [ ] Confirm that a `formattedStart` in a custom calendar parses as expected.
+- [ ] Confirm in the app whether children of a hidden resource are hidden from players (the mirror assumes they are: `playerHidden`). The API can't show this; an Admin key sees everything.
+- [ ] Confirm that a `formattedStart` in a custom calendar parses as expected. Gregorian works ("March 3rd, 2012" → "March 3rd, 2012 CE").
 
 ## Product
 

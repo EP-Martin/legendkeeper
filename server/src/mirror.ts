@@ -197,7 +197,10 @@ async function renderResource(
     const ref = { resourceId: item.id, documentId: doc.id }
     const tabHidden = hiddenTabs.has(doc.id)
     const summary = { id: doc.id, name: doc.name ?? null, type: doc.type ?? null, hidden: tabHidden }
-    const heading = (label: string) => `## ${label}: ${doc.name ?? 'Untitled'}${tabHidden ? ' [GM only]' : ''}`
+    const heading = (label: string) => {
+      const name = doc.name ?? 'Untitled'
+      return `## ${name.toLowerCase() === label.toLowerCase() ? label : `${label}: ${name}`}${tabHidden ? ' [GM only]' : ''}`
+    }
     try {
       if (doc.type === 'page') {
         const content = await lk.documents.getBlocks(ref)
