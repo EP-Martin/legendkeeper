@@ -39470,11 +39470,24 @@ var stableId = (prefix, ...parts) => `${prefix}${digest(...parts).slice(0, 23)}`
 var idempotencyKey = (...parts) => `lkp-${digest(...parts).slice(0, 48)}`;
 var isDuplicate = (error62) => error62 instanceof ConflictError && error62.code === "DUPLICATE_ID";
 var replayed = /* @__PURE__ */ new Set();
-var noteReplays = (inner = fetch) => async (input2, init) => {
-  const response = await inner(input2, init);
-  const key = new Headers(init.headers).get("idempotency-key");
-  if (key && response.headers.get("idempotent-replay") === "true") replayed.add(key);
-  return response;
+var MAX_RATE_WAIT_MS = 18e4;
+var clientFetch = (inner = fetch, sleep2 = (ms) => new Promise((r) => setTimeout(r, ms))) => async (input2, init) => {
+  let waited = 0;
+  for (; ; ) {
+    const response = await inner(input2, init);
+    if (response.status === 429) {
+      const seconds = Number(response.headers.get("retry-after"));
+      const ms = Math.max(1, Number.isFinite(seconds) && seconds > 0 ? seconds : 10) * 1e3;
+      if (waited + ms <= MAX_RATE_WAIT_MS) {
+        await sleep2(ms);
+        waited += ms;
+        continue;
+      }
+    }
+    const key = new Headers(init.headers).get("idempotency-key");
+    if (key && response.headers.get("idempotent-replay") === "true") replayed.add(key);
+    return response;
+  }
 };
 var wasReplayed = (key) => replayed.has(key);
 
@@ -41823,10 +41836,10 @@ async function refresh(lk2, ws2, resourceIds) {
   if (!index) return [];
   const byId = new Map(index.entries.map((entry) => [entry.id, entry]));
   const written = [];
+  const placed = [];
   for (const id of resourceIds) {
     const resource = await lk2.resources.get({ resourceId: id });
-    const existing = byId.get(id);
-    let file2 = existing?.file;
+    let file2 = byId.get(id)?.file;
     if (!file2) {
       const parent = resource.parentId ? byId.get(resource.parentId) : void 0;
       const dir = parent ? ws2.abs(parent.file.replace(/\.md$/, "")) : resource.parentId === "templates" ? join2(ws2.world, "_templates") : ws2.world;
@@ -41837,10 +41850,13 @@ async function refresh(lk2, ws2, resourceIds) {
     const ancestors = chain(entryFor(resource, file2, false, false), byId);
     const entry = entryFor(resource, file2, playerHidden(resource, ancestors), isTemplate(resource, ancestors));
     byId.set(id, entry);
+    placed.push({ resource, entry, ancestors });
+  }
+  for (const { resource, entry, ancestors } of placed) {
     const rendered = await renderResource(lk2, resource, ancestors.map((e) => e.name), entry.playerHidden, entry.template, (rid) => byId.get(rid)?.name);
-    await mkdir(dirname(ws2.abs(file2)), { recursive: true });
-    await writeFile(ws2.abs(file2), rendered.text);
-    written.push(file2);
+    await mkdir(dirname(ws2.abs(entry.file)), { recursive: true });
+    await writeFile(ws2.abs(entry.file), rendered.text);
+    written.push(entry.file);
   }
   index.entries = [...byId.values()];
   await ws2.writeIndex(index);
@@ -42038,7 +42054,7 @@ var VERSION = "0.1.0";
 var apiKey = process.env.LEGENDKEEPER_API_KEY?.trim();
 var workspaceEnv = process.env.LEGENDKEEPER_WORKSPACE?.trim();
 var ws = new Workspace(workspaceEnv && !workspaceEnv.includes("${") ? workspaceEnv : process.cwd());
-var lk = apiKey ? new LegendKeeper({ apiKey, maxRetries: 4, timeoutMs: 12e4, fetch: noteReplays() }) : void 0;
+var lk = apiKey ? new LegendKeeper({ apiKey, maxRetries: 4, timeoutMs: 12e4, fetch: clientFetch() }) : void 0;
 var server = new McpServer({ name: "legendkeeper", version: VERSION });
 function client() {
   if (!lk) throw new Error(`No API key. Set the plugin's "LegendKeeper API key" option (Project Settings \u2192 Developers \u2192 API Keys in LegendKeeper).`);

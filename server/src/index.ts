@@ -7,7 +7,7 @@ import { z } from 'zod'
 import { createPages } from './create.js'
 import { readDrafts } from './drafts.js'
 import { prepareImages } from './images.js'
-import { digest, isDuplicate, noteReplays, stableId } from './ids.js'
+import { clientFetch, digest, isDuplicate, stableId } from './ids.js'
 import { markdownToBlocks } from './markdown.js'
 import { pull, refresh, STYLE_TAG, Workspace } from './mirror.js'
 import { buildResolver as resolverFor } from './resolve.js'
@@ -18,7 +18,7 @@ const apiKey = process.env.LEGENDKEEPER_API_KEY?.trim()
 const workspaceEnv = process.env.LEGENDKEEPER_WORKSPACE?.trim()
 const ws = new Workspace(workspaceEnv && !workspaceEnv.includes('${') ? workspaceEnv : process.cwd())
 // Large batch writes can take well over the SDK's default 30 s per attempt.
-const lk = apiKey ? new LegendKeeper({ apiKey, maxRetries: 4, timeoutMs: 120_000, fetch: noteReplays() }) : undefined
+const lk = apiKey ? new LegendKeeper({ apiKey, maxRetries: 4, timeoutMs: 120_000, fetch: clientFetch() }) : undefined
 
 const server = new McpServer({ name: 'legendkeeper', version: VERSION })
 

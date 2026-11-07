@@ -132,10 +132,11 @@ export async function refresh(lk: LegendKeeper, ws: Workspace, resourceIds: stri
   const byId = new Map(index.entries.map((entry) => [entry.id, entry]))
   const written: string[] = []
 
+  // Index every resource first, so a page can name pages written after it (a god and its saints).
+  const placed = []
   for (const id of resourceIds) {
     const resource = await lk.resources.get({ resourceId: id })
-    const existing = byId.get(id)
-    let file = existing?.file
+    let file = byId.get(id)?.file
     if (!file) {
       const parent = resource.parentId ? byId.get(resource.parentId) : undefined
       const dir = parent ? ws.abs(parent.file.replace(/\.md$/, '')) : resource.parentId === 'templates' ? join(ws.world, '_templates') : ws.world
@@ -146,10 +147,13 @@ export async function refresh(lk: LegendKeeper, ws: Workspace, resourceIds: stri
     const ancestors = chain(entryFor(resource, file, false, false), byId)
     const entry = entryFor(resource, file, playerHidden(resource, ancestors), isTemplate(resource, ancestors))
     byId.set(id, entry)
+    placed.push({ resource, entry, ancestors })
+  }
+  for (const { resource, entry, ancestors } of placed) {
     const rendered = await renderResource(lk, resource, ancestors.map((e) => e.name), entry.playerHidden, entry.template, (rid) => byId.get(rid)?.name)
-    await mkdir(dirname(ws.abs(file)), { recursive: true })
-    await writeFile(ws.abs(file), rendered.text)
-    written.push(file)
+    await mkdir(dirname(ws.abs(entry.file)), { recursive: true })
+    await writeFile(ws.abs(entry.file), rendered.text)
+    written.push(entry.file)
   }
 
   index.entries = [...byId.values()]

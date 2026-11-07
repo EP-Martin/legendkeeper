@@ -10,7 +10,9 @@
 
 - [x] Calibrate page shapes and the style guide template against the two sample projects and LegendKeeper's twelve built-in templates. Pages are now built from the world's own templates; the plugin's shapes are the fallback.
 - [x] Run a full ingest end to end: three typeset pages of the owner's setting book (Acquia's Prime Deities), 8 pages, drafts round-tripped identically.
-- [ ] Ingest handwritten notes end to end (OCR), and a source large enough to need appends to existing pages.
+- [x] Ingest a large source with appends: the full Acquia chapter (39 pages) became 52 pages with 50 portraits plus 4 appends. It needed about 500 writes, past LegendKeeper's 120 writes a minute, so the server now waits out rate limits (about 5.5 minutes for this batch).
+- [ ] Ingest handwritten notes end to end (OCR).
+- [ ] Speed up large creates: about 7 sidebar writes per page dominate. Check whether `createMany` can carry sidebar properties.
 - [x] Write sidebar properties on plain pages too (`properties.create`), so fallback pages can match template pages. Template pages also get new fields for titles their template lacks. Checked live on the playground, including a retry.
 - [x] `lk_create_pages` retries reported replayed plain pages as `created`. They now count as already existing (the `Idempotent-Replay` header).
 - [x] Run `lk_pull` against both samples; fix rendering gaps. Remaining `<!-- lk: content the API cannot read -->` blocks (stat blocks, legacy child lists) are an API limit.
