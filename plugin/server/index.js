@@ -41351,7 +41351,6 @@ async function createPages(lk2, ws2, pages, dryRun) {
       parentId = resolve(page.parent);
       if (!parentId) throw new Error(`Parent "${page.parent}" of "${page.name}" was not found. Pull the mirror or create the parent in this batch.`);
     }
-    if (!templateId && Object.keys(page.sidebar).length) warnings.push(`${page.name}: sidebar values need a template; ignored.`);
     return {
       id: ids.get(page.name.trim().toLowerCase()),
       name: page.name.trim(),
@@ -41376,6 +41375,7 @@ async function createPages(lk2, ws2, pages, dryRun) {
         name: p2.name,
         template: p2.templateId ? pages.find((q2) => q2.name.trim() === p2.name).template : void 0,
         tabs: p2.tabs.map((t) => t.hidden ? `${t.name} (hidden)` : t.name),
+        sidebar: Object.keys(p2.sidebar),
         parent: p2.parentId ?? null
       })),
       warnings
@@ -41400,6 +41400,7 @@ async function createPages(lk2, ws2, pages, dryRun) {
   for (const page of sorted) {
     if (page.templateId) await fillTemplatePage(lk2, page);
     else await addHiddenTabs(lk2, page);
+    await writeSidebar(lk2, page, warnings);
   }
   return { created, existing, warnings };
 }
@@ -41479,13 +41480,32 @@ async function fillTemplatePage(lk2, page) {
   for (const doc of pageTabs) {
     if (!used.has(doc.id)) await lk2.documents.delete({ resourceId: page.id, documentId: doc.id });
   }
-  const wanted = new Map(Object.entries(page.sidebar).map(([k, v]) => [k.trim().toLowerCase(), v]));
-  if (wanted.size === 0) return;
+}
+async function writeSidebar(lk2, page, warnings) {
+  const entries = Object.entries(page.sidebar).map(([title, blocks]) => ({ title: title.trim(), blocks }));
+  if (entries.length === 0) return;
+  const byTitle = /* @__PURE__ */ new Map();
   for (const property2 of (await lk2.properties.list({ resourceId: page.id })).data) {
     const title = property2.title?.trim().toLowerCase();
-    const blocks = title ? wanted.get(title) : void 0;
-    if (!blocks || property2.kind !== "textField") continue;
-    await lk2.properties.update({ resourceId: page.id, propertyId: property2.id }, { children: blocks });
+    if (title && !byTitle.has(title)) byTitle.set(title, property2);
+  }
+  for (const { title, blocks } of entries) {
+    const found = byTitle.get(title.toLowerCase());
+    if (found && found.kind !== "textField") {
+      warnings.push(`${page.name}: sidebar field "${title}" is a ${found.kind} field, not text; left unchanged.`);
+      continue;
+    }
+    if (found) {
+      await lk2.properties.update({ resourceId: page.id, propertyId: found.id }, { children: blocks });
+      continue;
+    }
+    const id = stableId("p", page.id, title.toLowerCase());
+    try {
+      await lk2.properties.create({ resourceId: page.id }, { id, kind: "textField", title, children: blocks });
+    } catch (error62) {
+      if (!isDuplicate(error62)) throw error62;
+      await lk2.properties.update({ resourceId: page.id, propertyId: id }, { children: blocks });
+    }
   }
 }
 async function addHiddenTabs(lk2, page) {
@@ -41892,7 +41912,7 @@ var pageInput = external_exports.object({
     markdown: external_exports.string(),
     hidden: external_exports.boolean().default(false).describe('Hide this tab from players, e.g. "GM Notes" or "Backstory".')
   })).max(4).default([]).describe("Further page tabs after the first."),
-  sidebar: external_exports.record(external_exports.string(), external_exports.string()).default({}).describe('Template pages only: text for sidebar text fields by title, e.g. {"Summary": "\u2026"}.')
+  sidebar: external_exports.record(external_exports.string(), external_exports.string()).default({}).describe(`Sidebar text fields by title, e.g. {"Summary": "\u2026"}. Fills a template's field of that title; any other title becomes a new text field, in this order.`)
 });
 server.registerTool("lk_create_pages", {
   title: "Create pages",

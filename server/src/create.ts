@@ -72,7 +72,6 @@ export async function createPages(lk: LegendKeeper, ws: Workspace, pages: PageIn
       parentId = resolve(page.parent)
       if (!parentId) throw new Error(`Parent "${page.parent}" of "${page.name}" was not found. Pull the mirror or create the parent in this batch.`)
     }
-    if (!templateId && Object.keys(page.sidebar).length) warnings.push(`${page.name}: sidebar values need a template; ignored.`)
     return {
       id: ids.get(page.name.trim().toLowerCase())!,
       name: page.name.trim(),
@@ -98,6 +97,7 @@ export async function createPages(lk: LegendKeeper, ws: Workspace, pages: PageIn
         name: p.name,
         template: p.templateId ? pages.find((q) => q.name.trim() === p.name)!.template : undefined,
         tabs: p.tabs.map((t) => (t.hidden ? `${t.name} (hidden)` : t.name)),
+        sidebar: Object.keys(p.sidebar),
         parent: p.parentId ?? null,
       })),
       warnings,
@@ -122,10 +122,11 @@ export async function createPages(lk: LegendKeeper, ws: Workspace, pages: PageIn
   }
   await flush()
 
-  // Hidden tabs (and template pages' content) are written once the page exists and is hidden.
+  // Hidden tabs, sidebars and template pages' content are written once the page exists and is hidden.
   for (const page of sorted) {
     if (page.templateId) await fillTemplatePage(lk, page)
     else await addHiddenTabs(lk, page)
+    await writeSidebar(lk, page, warnings)
   }
   return { created, existing, warnings }
 }
@@ -197,7 +198,7 @@ async function createFromTemplate(
   })
 }
 
-/** Fills a template copy: the main tab, named tabs, and sidebar text fields. Idempotent. */
+/** Fills a template copy's main tab and named tabs. Idempotent. */
 async function fillTemplatePage(lk: LegendKeeper, page: Prepared) {
   const resource = await lk.resources.get({ resourceId: page.id })
   const tabs = [...resource.documents].sort((a, b) => ((a.rank ?? '') < (b.rank ?? '') ? -1 : 1))
@@ -218,13 +219,38 @@ async function fillTemplatePage(lk: LegendKeeper, page: Prepared) {
     if (!used.has(doc.id)) await lk.documents.delete({ resourceId: page.id, documentId: doc.id })
   }
 
-  const wanted = new Map(Object.entries(page.sidebar).map(([k, v]) => [k.trim().toLowerCase(), v]))
-  if (wanted.size === 0) return
+}
+
+/**
+ * Writes sidebar text fields by title: fills a field the page already has (a template's),
+ * and appends the rest as new text fields in input order. Idempotent.
+ */
+async function writeSidebar(lk: LegendKeeper, page: Prepared, warnings: string[]) {
+  const entries = Object.entries(page.sidebar).map(([title, blocks]) => ({ title: title.trim(), blocks }))
+  if (entries.length === 0) return
+  const byTitle = new Map<string, { id?: string; kind: string }>()
   for (const property of (await lk.properties.list({ resourceId: page.id })).data) {
     const title = (property as { title?: string }).title?.trim().toLowerCase()
-    const blocks = title ? wanted.get(title) : undefined
-    if (!blocks || property.kind !== 'textField') continue
-    await lk.properties.update({ resourceId: page.id, propertyId: property.id! }, { children: blocks })
+    if (title && !byTitle.has(title)) byTitle.set(title, property)
+  }
+  for (const { title, blocks } of entries) {
+    const found = byTitle.get(title.toLowerCase())
+    if (found && found.kind !== 'textField') {
+      warnings.push(`${page.name}: sidebar field "${title}" is a ${found.kind} field, not text; left unchanged.`)
+      continue
+    }
+    if (found) {
+      await lk.properties.update({ resourceId: page.id, propertyId: found.id! }, { children: blocks })
+      continue
+    }
+    // A stable id means a retry finds its own earlier field instead of adding a second one.
+    const id = stableId('p', page.id, title.toLowerCase())
+    try {
+      await lk.properties.create({ resourceId: page.id }, { id, kind: 'textField', title, children: blocks })
+    } catch (error) {
+      if (!isDuplicate(error)) throw error
+      await lk.properties.update({ resourceId: page.id, propertyId: id }, { children: blocks })
+    }
   }
 }
 

@@ -22,22 +22,25 @@ When the world has a LegendKeeper template for the kind of page (`lk_status` lis
 
 ## Fallback shapes
 
-Use these only when the world has no template for the kind and no existing pages to imitate. Without a template there's no sidebar to fill, so put glance facts in an `:::infobox` at the top of the first tab.
+Use these only when the world has no template for the kind and no existing pages to imitate. Put glance facts in `sidebar` as short text fields by title, as a template page would have them, not in a body infobox.
 
 ### Character
 
-- **Main:** an infobox with the facts the notes give (Role, Ancestry, Location, Faction, Status), then a bold one-line descriptor (`**Female Human Ferryman**`), a quote if the notes have one, and `## Appearance & Quirks` as a short list.
+- **Sidebar:** the facts the notes give (Summary, Role, Ancestry, Location, Faction, Status).
+- **Main:** a bold one-line descriptor (`**Female Human Ferryman**`), a quote if the notes have one, and `## Appearance & Quirks` as a short list.
 - **Personality:** `**Ideal:**`, `**Flaw:**` and `**Bond:**` paragraphs, only those the notes support.
 - **GM Notes** (hidden): secrets, true motives and plans.
 
 ### Location
 
-- **Main:** an infobox (Type, Region, Ruler or Proprietor), a summary paragraph, then `## Description`, `## Notable People`, and `## Rumors and Hooks` where the notes support them. Taverns and shops add `## Menu` or `## Wares` as a table.
+- **Sidebar:** Summary, Type, Region, Ruler or Proprietor.
+- **Main:** a summary paragraph, then `## Description`, `## Notable People`, and `## Rumors and Hooks` where the notes support them. Taverns and shops add `## Menu` or `## Wares` as a table.
 - **GM Notes** (hidden): what's really going on.
 
 ### Faction
 
-- **Main:** an infobox (Type, Leader, Base), then `## Overview`, `## Members` and `## Allies and Rivals`.
+- **Sidebar:** Summary, Type, Leader, Base.
+- **Main:** `## Overview`, `## Members` and `## Allies and Rivals`.
 - **GM Notes** (hidden): true aims and hidden members.
 
 ### Item
@@ -49,7 +52,8 @@ Use these only when the world has no template for the kind and no existing pages
 
 Name it as the world names sessions (default `Session 14`), under the campaign's sessions parent.
 
-- **Main:** an infobox (Date (real), Date (in game), Party, Location), then `## Summary` in three to five sentences, `## Events` as an ordered list with links, `## Loot and Rewards`, and `## Open Threads` as a checklist.
+- **Sidebar:** Date (real), Date (in game), Party, Location.
+- **Main:** `## Summary` in three to five sentences, `## Events` as an ordered list with links, `## Loot and Rewards`, and `## Open Threads` as a checklist.
 - **GM Notes** (hidden): what the players missed and the consequences in motion.
 
 ## Appending to an existing page

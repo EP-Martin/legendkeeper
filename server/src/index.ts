@@ -136,7 +136,7 @@ const pageInput = z.object({
     markdown: z.string(),
     hidden: z.boolean().default(false).describe('Hide this tab from players, e.g. "GM Notes" or "Backstory".'),
   })).max(4).default([]).describe('Further page tabs after the first.'),
-  sidebar: z.record(z.string(), z.string()).default({}).describe('Template pages only: text for sidebar text fields by title, e.g. {"Summary": "…"}.'),
+  sidebar: z.record(z.string(), z.string()).default({}).describe('Sidebar text fields by title, e.g. {"Summary": "…"}. Fills a template\'s field of that title; any other title becomes a new text field, in this order.'),
 })
 
 server.registerTool('lk_create_pages', {

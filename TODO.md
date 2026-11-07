@@ -10,7 +10,8 @@
 
 - [x] Calibrate page shapes and the style guide template against the two sample projects and LegendKeeper's twelve built-in templates. Pages are now built from the world's own templates; the plugin's shapes are the fallback.
 - [ ] Run a full ingest (scans → plan → drafts → apply) end to end on a real set of session notes.
-- [ ] Write sidebar properties on plain pages too (`properties.create`), so fallback pages can match template pages.
+- [x] Write sidebar properties on plain pages too (`properties.create`), so fallback pages can match template pages. Template pages also get new fields for titles their template lacks. Checked live on the playground, including a retry.
+- [ ] `lk_create_pages` retries report replayed plain pages as `created`: `createMany`'s idempotency key returns the first response. Report them as `existing`.
 - [x] Run `lk_pull` against both samples; fix rendering gaps. Remaining `<!-- lk: content the API cannot read -->` blocks (stat blocks, legacy child lists) are an API limit.
 - [x] Round-trip every sample page through Markdown and back: 95/97 identical, the other 2 differ by one space.
 - [x] Measure pulls: about 3 requests per resource, 10 s for 50 resources. `updatedAt` on resources and tabs does not change on content edits, so pulls stay full.
