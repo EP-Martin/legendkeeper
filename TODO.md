@@ -20,11 +20,11 @@
 - [x] Run `lk_pull` against both samples; fix rendering gaps. Remaining `<!-- lk: content the API cannot read -->` blocks (stat blocks, legacy child lists) are an API limit.
 - [x] Round-trip every sample page through Markdown and back: 95/97 identical, the other 2 differ by one space.
 - [x] Measure pulls: about 3 requests per resource, 10 s for 50 resources. `updatedAt` on resources and tabs does not change on content edits, so pulls stay full.
-- [ ] Speed up large pulls: skip `getBlocks` when a tab's block `version` is unchanged (needs a cheap way to read versions).
+- [ ] Speed up large pulls: skip `getBlocks` when a tab's block `version` is unchanged (needs a cheap way to read versions). Caution: a tab's `version` changed shortly after a write with no content edit (seen twice on 2026-11-07), so an unchanged-version check is safe, but a changed version doesn't prove an edit.
 - [ ] Report to LegendKeeper: inline icon runs (`{ icon: { name } }`) are returned but missing from the v3 spec and SDK types.
 - [ ] Check whether per-resource `permissions` can hide a page from players in a way `isHidden` doesn't; if so, fold it into `playerHidden`.
 - [ ] Confirm in the app whether children of a hidden resource are hidden from players (the mirror assumes they are: `playerHidden`). The API can't show this; an Admin key sees everything.
-- [ ] Confirm that a `formattedStart` in a custom calendar parses as expected. Gregorian works ("March 3rd, 2012" → "March 3rd, 2012 CE").
+- [ ] Confirm that a `formattedStart` in a custom calendar parses as expected. Gregorian works for days, months, years and ranges ("August 2019" → "August 2019 CE"; "1960"–"1969").
 
 ## Product
 
