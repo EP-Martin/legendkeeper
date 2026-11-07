@@ -13,6 +13,8 @@ The plugin's write tools (`lk_create_pages`, `lk_append_to_page`) accept CommonM
 | `[text](lk://resources/<id>)` | Mention by resource id (the mirror uses this for pages it can't name) |
 | A line ending in `\` | Line break |
 
+A mention can't be bold, italic or otherwise formatted in LegendKeeper. Keep links outside formatting: write `**Ruler:** [[Mira Vell]]`, not `**[[Mira Vell]]:**`. The write tools warn when formatting would be dropped.
+
 A mention resolves against, in order: other pages in the same `lk_create_pages` batch (names and aliases), the mirror index, then a live exact-name search. A name that matches two pages is left as plain text with an "ambiguous" warning. Link the page's exact name instead, or use its id.
 
 ## Blocks

@@ -41130,10 +41130,14 @@ function linkRuns(token, marks, options, warnings) {
       warnings.push(`Unresolved link [[${name}]] written as plain text.`);
       return textRuns(label, marks);
     }
+    unmarked(`[[${name}]]`, marks, warnings);
     return [{ mention: label === name ? { resourceId } : { resourceId, text: label } }];
   }
   const id = LK_RESOURCE.exec(token.href)?.[1];
-  if (id) return [{ mention: { resourceId: id, text: label } }];
+  if (id) {
+    unmarked(`[${label}]`, marks, warnings);
+    return [{ mention: { resourceId: id, text: label } }];
+  }
   return inlineTokens(token.tokens, { ...marks, link: token.href }, options, warnings);
 }
 var REMOTE = /^https?:\/\//i;
@@ -41154,6 +41158,10 @@ function imageBlock(token, options, warnings) {
   }
   const alt = decode3(token.text).trim();
   return { kind: "image", url: url2, ...alt ? { alt } : {} };
+}
+function unmarked(link2, marks, warnings) {
+  const dropped = Object.entries(marks).filter(([, on]) => on).map(([mark]) => mark);
+  if (dropped.length) warnings.push(`${link2} can't be ${dropped.join(" or ")} in LegendKeeper; written without it. Keep the link outside the formatting, e.g. "**Camarilla:** [[Camarilla]]".`);
 }
 function textRuns(text, marks) {
   return text ? [{ text, ...marks }] : [];

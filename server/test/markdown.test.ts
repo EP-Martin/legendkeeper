@@ -32,6 +32,15 @@ describe('markdownToBlocks', () => {
     expect(warnings).toEqual(['Unresolved link [[Nobody]] written as plain text.'])
   })
 
+  it('warns when bold or italic wraps a link, since LegendKeeper mentions carry no formatting', () => {
+    const { blocks, warnings } = markdownToBlocks('- **[[Mira Vell]]:** runs the docks.\n\n**[[Mira Vell]]** and *[[Mira Vell]]* again.', { resolve })
+    expect(blocks[0]).toMatchObject({ kind: 'bulletList' })
+    expect(warnings).toHaveLength(3)
+    expect(warnings[0]).toMatch(/^\[\[Mira Vell\]\] can't be bold in LegendKeeper/)
+    expect(warnings[2]).toMatch(/can't be italic/)
+    expect(markdownToBlocks('**Ruler:** [[Mira Vell]]', { resolve }).warnings).toEqual([])
+  })
+
   it('builds infobox, secret, expand and callout blocks', () => {
     const md = [
       ':::infobox', 'Role: Innkeeper', 'Haunt: [[The Gilded Eel]]', ':::',

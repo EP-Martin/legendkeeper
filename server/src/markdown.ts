@@ -282,10 +282,14 @@ function linkRuns(token: Tokens.Link, marks: Marks, options: ParseOptions, warni
       warnings.push(`Unresolved link [[${name}]] written as plain text.`)
       return textRuns(label, marks)
     }
+    unmarked(`[[${name}]]`, marks, warnings)
     return [{ mention: label === name ? { resourceId } : { resourceId, text: label } }]
   }
   const id = LK_RESOURCE.exec(token.href)?.[1]
-  if (id) return [{ mention: { resourceId: id, text: label } }]
+  if (id) {
+    unmarked(`[${label}]`, marks, warnings)
+    return [{ mention: { resourceId: id, text: label } }]
+  }
   return inlineTokens(token.tokens, { ...marks, link: token.href }, options, warnings)
 }
 
@@ -307,6 +311,12 @@ function imageBlock(token: Tokens.Image, options: ParseOptions, warnings: string
   }
   const alt = decode(token.text).trim()
   return { kind: 'image', url, ...(alt ? { alt } : {}) }
+}
+
+/** LegendKeeper mentions carry no marks, so bold or italic around a link would be dropped silently. */
+function unmarked(link: string, marks: Marks, warnings: string[]) {
+  const dropped = Object.entries(marks).filter(([, on]) => on).map(([mark]) => mark)
+  if (dropped.length) warnings.push(`${link} can't be ${dropped.join(' or ')} in LegendKeeper; written without it. Keep the link outside the formatting, e.g. "**Camarilla:** [[Camarilla]]".`)
 }
 
 function textRuns(text: string, marks: Marks): Run[] {
