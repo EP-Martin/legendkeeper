@@ -24,7 +24,7 @@ The write tools convert Markdown to LegendKeeper blocks. The full syntax is in [
 - `:::secret` … `:::` holds content hidden from players.
 - `> [!note]`, `[!info]`, `[!success]`, `[!warning]` and `[!error]` start callouts.
 - Do not repeat the page title as a heading. LegendKeeper shows it.
-- Images are not supported yet. Describe them in text or leave them out.
+- `![alt](<path>)` on a line of its own uploads an image file from the workspace; `Image: ![alt](<path>)` in a draft's sidebar sets the portrait. Only files can be uploaded, not pictures that exist only in the conversation.
 
 ## Page shapes
 

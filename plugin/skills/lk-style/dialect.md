@@ -54,8 +54,22 @@ She sells the harbor schedules to [[Captain Ilse Marr]].
 - **Secret:** hidden from players in LegendKeeper. Any Markdown inside.
 - **Expand:** a collapsible section with a title.
 
+## Images
+
+An image on a line of its own becomes an image block:
+
+```
+![Sela Varn](<legendkeeper/sources/2026-11-06-session-14/images/Sela Varn.png>)
+```
+
+- The path is relative to the workspace. Wrap a path that has spaces in `<…>`. PNG, JPEG, GIF and WebP work.
+- The write tools upload each file once, into the asset folder "Uploaded by Claude", and reuse that upload whenever the same file appears again.
+- A URL passes through unchanged. LegendKeeper accepts only its own asset URLs, which is what the mirror shows.
+- In a draft's `## Sidebar`, `Image: ![alt](path)` fills the page's image field, or adds one at the top of the sidebar.
+- An image inside a sentence, a list or an `:::infobox` is skipped with a warning.
+
 ## Not supported yet
 
-Images, maps, embeds, collections and layout columns can't be written. The mirror shows them as comments such as `<!-- lk: embedded map -->`. Appending to a page never touches them.
+Maps, embeds, collections and layout columns can't be written. The mirror shows them as comments such as `<!-- lk: embedded map -->`. Appending to a page never touches them.
 
 `<!-- lk: content the API cannot read -->` marks a block that LegendKeeper's API doesn't expose, such as a 5e stat block or a legacy child-page list. Its content is real but invisible to Claude. Never report it as missing information or a continuity gap; say the page has content that can only be read in LegendKeeper.

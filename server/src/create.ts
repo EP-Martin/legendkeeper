@@ -2,6 +2,7 @@
 import type { LegendKeeper } from '@legendkeeper/sdk'
 import type { Block } from '@legendkeeper/sdk/blocks'
 import { digest, idempotencyKey, isDuplicate, stableId, wasReplayed } from './ids.js'
+import { prepareImages } from './images.js'
 import { markdownToBlocks } from './markdown.js'
 import type { Workspace } from './mirror.js'
 import { buildResolver } from './resolve.js'
@@ -55,8 +56,10 @@ export async function createPages(lk: LegendKeeper, ws: Workspace, pages: PageIn
 
   const sources = pages.flatMap((p) => [p.markdown, ...p.tabs.map((t) => t.markdown), ...Object.values(p.sidebar)])
   const { resolve, ambiguous } = await buildResolver(lk, ws, sources, ids)
+  const images = await prepareImages(lk, ws.root, sources, dryRun)
+  warnings.push(...images.warnings)
   const convert = (where: string, markdown: string) => {
-    const result = markdownToBlocks(markdown, { resolve })
+    const result = markdownToBlocks(markdown, { resolve, image: images.image })
     warnings.push(...result.warnings.map((w) => `${where}: ${w}`))
     return result.blocks
   }
@@ -224,34 +227,43 @@ async function fillTemplatePage(lk: LegendKeeper, page: Prepared) {
 }
 
 /**
- * Writes sidebar text fields by title: fills a field the page already has (a template's),
- * and appends the rest as new text fields in input order. Idempotent.
+ * Writes sidebar fields by title: fills a field the page already has (a template's), and adds
+ * the rest as new fields in input order. A value that is only an image fills an image field;
+ * a new image field goes first, as a portrait does. Idempotent.
  */
 async function writeSidebar(lk: LegendKeeper, page: Prepared, warnings: string[]) {
   const entries = Object.entries(page.sidebar).map(([title, blocks]) => ({ title: title.trim(), blocks }))
   if (entries.length === 0) return
+  const properties = (await lk.properties.list({ resourceId: page.id })).data as { id?: string; kind: string; title?: string }[]
   const byTitle = new Map<string, { id?: string; kind: string }>()
-  for (const property of (await lk.properties.list({ resourceId: page.id })).data) {
-    const title = (property as { title?: string }).title?.trim().toLowerCase()
+  for (const property of properties) {
+    const title = property.title?.trim().toLowerCase()
     if (title && !byTitle.has(title)) byTitle.set(title, property)
   }
   for (const { title, blocks } of entries) {
+    const image = blocks.length === 1 && blocks[0]!.kind === 'image' ? blocks[0] : undefined
+    const kind = image ? 'image' : 'textField'
     const found = byTitle.get(title.toLowerCase())
-    if (found && found.kind !== 'textField') {
-      warnings.push(`${page.name}: sidebar field "${title}" is a ${found.kind} field, not text; left unchanged.`)
+    if (found && found.kind !== kind) {
+      warnings.push(`${page.name}: sidebar field "${title}" is a ${found.kind} field, not ${image ? 'an image' : 'text'}; left unchanged.`)
       continue
     }
+    const patch = image ? { url: image.url, ...(image.alt ? { alt: image.alt } : {}) } : { children: blocks }
     if (found) {
-      await lk.properties.update({ resourceId: page.id, propertyId: found.id! }, { children: blocks })
+      await lk.properties.update({ resourceId: page.id, propertyId: found.id! }, patch)
       continue
     }
     // A stable id means a retry finds its own earlier field instead of adding a second one.
     const id = stableId('p', page.id, title.toLowerCase())
+    const first = properties[0]?.id
+    const body = image
+      ? { id, kind: 'image' as const, title, isTitleHidden: true, fill: true, ...patch, ...(first ? { before: first } : {}) }
+      : { id, kind: 'textField' as const, title, children: blocks }
     try {
-      await lk.properties.create({ resourceId: page.id }, { id, kind: 'textField', title, children: blocks })
+      await lk.properties.create({ resourceId: page.id }, body as Parameters<typeof lk.properties.create>[1])
     } catch (error) {
       if (!isDuplicate(error)) throw error
-      await lk.properties.update({ resourceId: page.id, propertyId: id }, { children: blocks })
+      await lk.properties.update({ resourceId: page.id, propertyId: id }, patch)
     }
   }
 }

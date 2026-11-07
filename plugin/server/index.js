@@ -3913,50 +3913,50 @@ var require_fast_uri = __commonJS({
       schemelessOptions.skipEscape = true;
       return serialize(resolved, schemelessOptions);
     }
-    function resolveComponent(base, relative3, options, skipNormalization) {
+    function resolveComponent(base, relative4, options, skipNormalization) {
       const target = {};
       if (!skipNormalization) {
         base = parse3(serialize(base, options), options);
-        relative3 = parse3(serialize(relative3, options), options);
+        relative4 = parse3(serialize(relative4, options), options);
       }
       options = options || {};
-      if (!options.tolerant && relative3.scheme) {
-        target.scheme = relative3.scheme;
-        target.userinfo = relative3.userinfo;
-        target.host = relative3.host;
-        target.port = relative3.port;
-        target.path = removeDotSegments(relative3.path || "");
-        target.query = relative3.query;
+      if (!options.tolerant && relative4.scheme) {
+        target.scheme = relative4.scheme;
+        target.userinfo = relative4.userinfo;
+        target.host = relative4.host;
+        target.port = relative4.port;
+        target.path = removeDotSegments(relative4.path || "");
+        target.query = relative4.query;
       } else {
-        if (relative3.userinfo !== void 0 || relative3.host !== void 0 || relative3.port !== void 0) {
-          target.userinfo = relative3.userinfo;
-          target.host = relative3.host;
-          target.port = relative3.port;
-          target.path = removeDotSegments(relative3.path || "");
-          target.query = relative3.query;
+        if (relative4.userinfo !== void 0 || relative4.host !== void 0 || relative4.port !== void 0) {
+          target.userinfo = relative4.userinfo;
+          target.host = relative4.host;
+          target.port = relative4.port;
+          target.path = removeDotSegments(relative4.path || "");
+          target.query = relative4.query;
         } else {
-          if (!relative3.path) {
+          if (!relative4.path) {
             target.path = base.path;
-            if (relative3.query !== void 0) {
-              target.query = relative3.query;
+            if (relative4.query !== void 0) {
+              target.query = relative4.query;
             } else {
               target.query = base.query;
             }
           } else {
-            if (relative3.path[0] === "/") {
-              target.path = removeDotSegments(relative3.path);
+            if (relative4.path[0] === "/") {
+              target.path = removeDotSegments(relative4.path);
             } else {
               const baseHasAuthority = base.userinfo !== void 0 || base.host !== void 0 || base.port !== void 0;
               if (baseHasAuthority && !base.path) {
-                target.path = "/" + relative3.path;
+                target.path = "/" + relative4.path;
               } else if (!base.path) {
-                target.path = relative3.path;
+                target.path = relative4.path;
               } else {
-                target.path = base.path.slice(0, base.path.lastIndexOf("/") + 1) + relative3.path;
+                target.path = base.path.slice(0, base.path.lastIndexOf("/") + 1) + relative4.path;
               }
               target.path = base.scheme === void 0 && !baseHasAuthority && target.path[0] !== "/" ? removeDotSegmentsRelative(target.path) : removeDotSegments(target.path);
             }
-            target.query = relative3.query;
+            target.query = relative4.query;
           }
           target.userinfo = base.userinfo;
           target.host = base.host;
@@ -3964,7 +3964,7 @@ var require_fast_uri = __commonJS({
         }
         target.scheme = base.scheme;
       }
-      target.fragment = relative3.fragment;
+      target.fragment = relative4.fragment;
       return target;
     }
     function equal(uriA, uriB, options) {
@@ -39478,6 +39478,11 @@ var noteReplays = (inner = fetch) => async (input2, init) => {
 };
 var wasReplayed = (key) => replayed.has(key);
 
+// src/images.ts
+import { createHash as createHash2 } from "node:crypto";
+import { readFile } from "node:fs/promises";
+import { basename, extname, isAbsolute, relative, resolve as resolvePath } from "node:path";
+
 // node_modules/marked/lib/marked.esm.js
 function H() {
   return { async: false, breaks: false, extensions: null, gfm: true, hooks: null, pedantic: false, renderer: null, silent: false, tokenizer: null, walkTokens: null };
@@ -40975,6 +40980,8 @@ function blockToken(token, options, warnings) {
     case "paragraph":
     case "text": {
       const t = token;
+      const parts = (t.tokens ?? []).filter((x2) => !(x2.type === "text" && !x2.raw.trim()));
+      if (parts.length === 1 && parts[0].type === "image") return imageBlock(parts[0], options, warnings);
       return paragraph(t.tokens ? inlineTokens(t.tokens, {}, options, warnings) : textRuns(t.text, {}));
     }
     case "code": {
@@ -41093,7 +41100,7 @@ function inlineTokensRaw(tokens, marks, options, warnings) {
         out.push(...linkRuns(token, marks, options, warnings));
         break;
       case "image":
-        warnings.push(`Image "${token.href}" skipped: upload images with lk_upload_image first.`);
+        warnings.push(`Image "${imagePath(token.href)}" skipped: put an image on a line of its own.`);
         break;
       default:
         out.push(...textRuns(token.raw, marks));
@@ -41115,6 +41122,25 @@ function linkRuns(token, marks, options, warnings) {
   const id = LK_RESOURCE.exec(token.href)?.[1];
   if (id) return [{ mention: { resourceId: id, text: label } }];
   return inlineTokens(token.tokens, { ...marks, link: token.href }, options, warnings);
+}
+var REMOTE = /^https?:\/\//i;
+function imagePath(href) {
+  if (REMOTE.test(href)) return href;
+  try {
+    return decodeURI(href);
+  } catch {
+    return href;
+  }
+}
+function imageBlock(token, options, warnings) {
+  const src = imagePath(token.href);
+  const url2 = REMOTE.test(src) ? src : options.image?.(src);
+  if (!url2) {
+    warnings.push(`Image "${src}" skipped: no uploaded image for it.`);
+    return void 0;
+  }
+  const alt = decode3(token.text).trim();
+  return { kind: "image", url: url2, ...alt ? { alt } : {} };
 }
 function textRuns(text, marks) {
   return text ? [{ text, ...marks }] : [];
@@ -41211,7 +41237,7 @@ function renderInfobox(rows, o) {
       for (const kv of row.rows) target.push(`${kv.key}: ${renderRuns(kv.content ?? [], o) || kv.text || ""}`);
     } else {
       const title = propertyTitle(row.title ?? row.kind);
-      const body = row.kind === "image" ? `![${title}](${row.url})` : row.kind === "resourceCollection" || row.kind === "resourceLink" ? (row.items ?? []).map((item) => wikiLink(item.resourceId, void 0, o)).join(", ") || "(automatic list)" : renderBlock(row, o).replace(/\n+/g, " ").replace(/^- /, "");
+      const body = row.kind === "image" ? `![${row.alt || title}](${row.url})` : row.kind === "resourceCollection" || row.kind === "resourceLink" ? (row.items ?? []).map((item) => wikiLink(item.resourceId, void 0, o)).join(", ") || "(automatic list)" : renderBlock(row, o).replace(/\n+/g, " ").replace(/^- /, "");
       target.push(`${title}: ${body}`);
     }
   }
@@ -41279,6 +41305,86 @@ function indent(text, pad, skipFirst = false) {
   return text.split("\n").map((line, i) => skipFirst && i === 0 || !line ? line : pad + line).join("\n");
 }
 
+// src/images.ts
+var UPLOAD_FOLDER = "Uploaded by Claude";
+var TYPES = {
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".gif": "image/gif",
+  ".webp": "image/webp"
+};
+function localImages(sources) {
+  const found = /* @__PURE__ */ new Set();
+  const walk2 = (tokens) => {
+    for (const t of tokens) {
+      if (t.type === "image" && !/^https?:\/\//i.test(t.href)) found.add(imagePath(t.href));
+      const children = t.tokens;
+      if (children) walk2(children);
+      for (const item of t.items ?? []) walk2(item.tokens);
+      for (const cell of [...t.header ?? [], ...(t.rows ?? []).flat()]) walk2(cell.tokens);
+    }
+  };
+  for (const source of sources) walk2(new O({ gfm: true }).lex(source));
+  return [...found];
+}
+async function prepareImages(lk2, root, sources, dryRun) {
+  const urls = /* @__PURE__ */ new Map();
+  const warnings = [];
+  const paths = localImages(sources);
+  let library;
+  for (const path of paths) {
+    const full = resolvePath(root, path);
+    const rel = relative(resolvePath(root), full);
+    if (rel.startsWith("..") || isAbsolute(rel)) {
+      warnings.push(`Image "${path}" is outside the workspace; skipped.`);
+      continue;
+    }
+    const contentType = TYPES[extname(full).toLowerCase()];
+    if (!contentType) {
+      warnings.push(`Image "${path}" is not PNG, JPEG, GIF or WebP; skipped.`);
+      continue;
+    }
+    let data;
+    try {
+      data = await readFile(full);
+    } catch {
+      warnings.push(`Image "${path}" was not found in the workspace; skipped.`);
+      continue;
+    }
+    if (dryRun) {
+      urls.set(path, `file:${path}`);
+      continue;
+    }
+    library ??= uploadLibrary(lk2);
+    const { folderId, byHash } = await library;
+    const hash2 = `sha256:${createHash2("sha256").update(data).digest("hex")}`;
+    let url2 = byHash.get(hash2);
+    if (!url2) {
+      const asset = await lk2.assets.uploadImage({ data, contentType, name: basename(full, extname(full)), description: hash2, folderId });
+      url2 = asset.url;
+      byHash.set(hash2, url2);
+    }
+    urls.set(path, url2);
+  }
+  return { image: (src) => urls.get(src), warnings, count: urls.size };
+}
+async function uploadLibrary(lk2) {
+  let folderId;
+  for await (const asset of await lk2.assets.list({ limit: 100 })) {
+    if (asset.type === "FOLDER" && asset.name === UPLOAD_FOLDER) {
+      folderId = asset.id;
+      break;
+    }
+  }
+  folderId ??= (await lk2.assets.createFolder({ name: UPLOAD_FOLDER })).id;
+  const byHash = /* @__PURE__ */ new Map();
+  for await (const asset of await lk2.assets.list({ folderId, limit: 100 })) {
+    if (asset.type === "IMAGE" && asset.url && asset.description?.startsWith("sha256:")) byHash.set(asset.description, asset.url);
+  }
+  return { folderId, byHash };
+}
+
 // src/resolve.ts
 var RESOURCE_ID = /^r[A-Za-z0-9]{8,}$/;
 async function buildResolver(lk2, ws2, sources, extra = /* @__PURE__ */ new Map()) {
@@ -41343,8 +41449,10 @@ async function createPages(lk2, ws2, pages, dryRun) {
   }
   const sources = pages.flatMap((p2) => [p2.markdown, ...p2.tabs.map((t) => t.markdown), ...Object.values(p2.sidebar)]);
   const { resolve, ambiguous } = await buildResolver(lk2, ws2, sources, ids);
+  const images = await prepareImages(lk2, ws2.root, sources, dryRun);
+  warnings.push(...images.warnings);
   const convert = (where, markdown) => {
-    const result = markdownToBlocks(markdown, { resolve });
+    const result = markdownToBlocks(markdown, { resolve, image: images.image });
     warnings.push(...result.warnings.map((w2) => `${where}: ${w2}`));
     return result.blocks;
   };
@@ -41493,27 +41601,33 @@ async function fillTemplatePage(lk2, page) {
 async function writeSidebar(lk2, page, warnings) {
   const entries = Object.entries(page.sidebar).map(([title, blocks]) => ({ title: title.trim(), blocks }));
   if (entries.length === 0) return;
+  const properties = (await lk2.properties.list({ resourceId: page.id })).data;
   const byTitle = /* @__PURE__ */ new Map();
-  for (const property2 of (await lk2.properties.list({ resourceId: page.id })).data) {
+  for (const property2 of properties) {
     const title = property2.title?.trim().toLowerCase();
     if (title && !byTitle.has(title)) byTitle.set(title, property2);
   }
   for (const { title, blocks } of entries) {
+    const image2 = blocks.length === 1 && blocks[0].kind === "image" ? blocks[0] : void 0;
+    const kind = image2 ? "image" : "textField";
     const found = byTitle.get(title.toLowerCase());
-    if (found && found.kind !== "textField") {
-      warnings.push(`${page.name}: sidebar field "${title}" is a ${found.kind} field, not text; left unchanged.`);
+    if (found && found.kind !== kind) {
+      warnings.push(`${page.name}: sidebar field "${title}" is a ${found.kind} field, not ${image2 ? "an image" : "text"}; left unchanged.`);
       continue;
     }
+    const patch = image2 ? { url: image2.url, ...image2.alt ? { alt: image2.alt } : {} } : { children: blocks };
     if (found) {
-      await lk2.properties.update({ resourceId: page.id, propertyId: found.id }, { children: blocks });
+      await lk2.properties.update({ resourceId: page.id, propertyId: found.id }, patch);
       continue;
     }
     const id = stableId("p", page.id, title.toLowerCase());
+    const first = properties[0]?.id;
+    const body = image2 ? { id, kind: "image", title, isTitleHidden: true, fill: true, ...patch, ...first ? { before: first } : {} } : { id, kind: "textField", title, children: blocks };
     try {
-      await lk2.properties.create({ resourceId: page.id }, { id, kind: "textField", title, children: blocks });
+      await lk2.properties.create({ resourceId: page.id }, body);
     } catch (error62) {
       if (!isDuplicate(error62)) throw error62;
-      await lk2.properties.update({ resourceId: page.id, propertyId: id }, { children: blocks });
+      await lk2.properties.update({ resourceId: page.id, propertyId: id }, patch);
     }
   }
 }
@@ -41529,8 +41643,8 @@ async function addHiddenTabs(lk2, page) {
 }
 
 // src/drafts.ts
-import { readdir, readFile, stat } from "node:fs/promises";
-import { isAbsolute, join, relative, resolve as resolvePath } from "node:path";
+import { readdir, readFile as readFile2, stat } from "node:fs/promises";
+import { isAbsolute as isAbsolute2, join, relative as relative2, resolve as resolvePath2 } from "node:path";
 var TAB = /^## Tab: *(.+?) *$/;
 var GM_ONLY = /\s*\[GM only\]$/i;
 function parseDraft(text, where) {
@@ -41612,12 +41726,12 @@ function frontmatter(block) {
   return meta3;
 }
 async function readDrafts(root, paths) {
-  const base = resolvePath(root);
+  const base = resolvePath2(root);
   const files = [];
   for (const path of paths) {
-    const full = resolvePath(base, path);
-    const rel = relative(base, full);
-    if (rel.startsWith("..") || isAbsolute(rel)) throw new Error(`Draft path "${path}" is outside the workspace.`);
+    const full = resolvePath2(base, path);
+    const rel = relative2(base, full);
+    if (rel.startsWith("..") || isAbsolute2(rel)) throw new Error(`Draft path "${path}" is outside the workspace.`);
     if ((await stat(full)).isDirectory()) {
       const names = (await readdir(full)).filter((f) => f.endsWith(".md") && !f.startsWith("append--")).sort();
       if (names.length === 0) throw new Error(`No drafts in "${path}".`);
@@ -41626,13 +41740,13 @@ async function readDrafts(root, paths) {
       files.push(full);
     }
   }
-  return Promise.all(files.map(async (f) => parseDraft(await readFile(f, "utf8"), relative(base, f).split("\\").join("/"))));
+  return Promise.all(files.map(async (f) => parseDraft(await readFile2(f, "utf8"), relative2(base, f).split("\\").join("/"))));
 }
 
 // src/mirror.ts
 import { existsSync } from "node:fs";
-import { mkdir, readFile as readFile2, rename, rm, writeFile } from "node:fs/promises";
-import { dirname, join as join2, relative as relative2 } from "node:path";
+import { mkdir, readFile as readFile3, rename, rm, writeFile } from "node:fs/promises";
+import { dirname, join as join2, relative as relative3 } from "node:path";
 var STYLE_TAG = "claude-style";
 var Workspace = class {
   constructor(root) {
@@ -41649,14 +41763,14 @@ var Workspace = class {
     return join2(this.base, ".state", "index.json");
   }
   rel(path) {
-    return relative2(this.root, path).split("\\").join("/");
+    return relative3(this.root, path).split("\\").join("/");
   }
   abs(rel) {
     return join2(this.root, rel);
   }
   async readIndex() {
     try {
-      return JSON.parse(await readFile2(this.indexFile, "utf8"));
+      return JSON.parse(await readFile3(this.indexFile, "utf8"));
     } catch {
       return void 0;
     }
@@ -41690,7 +41804,7 @@ async function pull(lk2, ws2) {
     result.timelines += rendered.timelines;
     result.skipped.push(...rendered.skipped);
     result.warnings.push(...rendered.warnings);
-    const target = join2(staging, relative2(ws2.world, files.get(item.id)));
+    const target = join2(staging, relative3(ws2.world, files.get(item.id)));
     await mkdir(dirname(target), { recursive: true });
     await writeFile(target, rendered.text);
   });
@@ -41886,7 +42000,7 @@ ${Object.entries(data).map(([k, v]) => `${k}: ${JSON.stringify(v)}`).join("\n")}
 }
 function renderIndex(index, ws2) {
   const row = (e) => {
-    const link2 = mdPath(relative2(ws2.world, ws2.abs(e.file)));
+    const link2 = mdPath(relative3(ws2.world, ws2.abs(e.file)));
     const extra = [
       e.aliases.length ? `aka ${e.aliases.join(", ")}` : "",
       e.tags.length ? `tags: ${e.tags.join(", ")}` : "",
@@ -41902,7 +42016,7 @@ function renderIndex(index, ws2) {
     `# ${index.projectName}`,
     "",
     `Pulled ${index.pulledAt}. ${index.entries.length} resources.`,
-    style ? `Style guide: [${style.name}](${mdPath(relative2(ws2.world, ws2.abs(style.file)))})` : `Style guide: none yet. Tag a hidden page "${STYLE_TAG}".`,
+    style ? `Style guide: [${style.name}](${mdPath(relative3(ws2.world, ws2.abs(style.file)))})` : `Style guide: none yet. Tag a hidden page "${STYLE_TAG}".`,
     "",
     ...rows,
     "",
@@ -42016,13 +42130,13 @@ var pageInput = external_exports.object({
   tags: external_exports.array(external_exports.string()).default([]).describe("Tags. With a template, omit to keep the template's tags."),
   aliases: external_exports.array(external_exports.string()).default([]).describe("Other names the page goes by; links and search match them."),
   hidden: external_exports.boolean().default(false).describe("Hide the whole page from players."),
-  markdown: external_exports.string().describe(`Body of the first tab (a template's first tab, e.g. "Overview", or "Main") in the plugin Markdown dialect (see the lk-style skill). Do not repeat the title as a heading.`),
+  markdown: external_exports.string().describe(`Body of the first tab (a template's first tab, e.g. "Overview", or "Main") in the plugin Markdown dialect (see the lk-style skill). Do not repeat the title as a heading. An image on its own line, ![alt](<workspace path>), is uploaded.`),
   tabs: external_exports.array(external_exports.object({
     name: external_exports.string().min(1).describe("Tab name. With a template, use the template's tab names."),
     markdown: external_exports.string(),
     hidden: external_exports.boolean().default(false).describe('Hide this tab from players, e.g. "GM Notes" or "Backstory".')
   })).max(4).default([]).describe("Further page tabs after the first."),
-  sidebar: external_exports.record(external_exports.string(), external_exports.string()).default({}).describe(`Sidebar text fields by title, e.g. {"Summary": "\u2026"}. Fills a template's field of that title; any other title becomes a new text field, in this order.`)
+  sidebar: external_exports.record(external_exports.string(), external_exports.string()).default({}).describe(`Sidebar fields by title, e.g. {"Summary": "\u2026", "Image": "![Portrait](<legendkeeper/sources/x/images/Mira.png>)"}. Fills a template's field of that title; any other title becomes a new field, in this order. A value that is only an image makes an image field.`)
 });
 server.registerTool("lk_create_pages", {
   title: "Create pages",
@@ -42064,7 +42178,9 @@ server.registerTool("lk_append_to_page", {
   const docs = resource.documents.filter((d) => d.type === "page" || d.type === "blank");
   const doc = document ? docs.find((d) => d.name?.toLowerCase() === document.toLowerCase()) : docs[0];
   if (!doc) throw new Error(`"${resource.name}" has no page tab${document ? ` named "${document}"` : ""} to append to.`);
-  const parsed = markdownToBlocks(markdown, { resolve });
+  const images = await prepareImages(client(), ws.root, [markdown], false);
+  const parsed = markdownToBlocks(markdown, { resolve, image: images.image });
+  parsed.warnings.unshift(...images.warnings);
   const ref = { resourceId, documentId: doc.id };
   const call = digest(resourceId, doc.id, markdown);
   const blocks = parsed.blocks.map((block, i) => ({ ...block, id: stableId("b", call, String(i)) }));

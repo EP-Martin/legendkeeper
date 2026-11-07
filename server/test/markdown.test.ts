@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { localImages } from '../src/images.js'
 import { blocksToMarkdown, markdownToBlocks } from '../src/markdown.js'
 
 const pages: Record<string, string> = { 'mira vell': 'rMira0001', 'the gilded eel': 'rEel00001', 'vell': 'rMira0001' }
@@ -72,10 +73,38 @@ describe('markdownToBlocks', () => {
     expect(blocks[0]).toEqual({ kind: 'paragraph', content: [{ text: 'Mira’s "deal" & Tom\'s <debt>' }] })
   })
 
-  it('warns about images instead of writing a broken image block', () => {
-    const { blocks, warnings } = markdownToBlocks('![portrait](portrait.png)', { resolve })
-    expect(blocks).toEqual([{ kind: 'paragraph', content: [] }])
-    expect(warnings[0]).toMatch(/Image "portrait.png" skipped/)
+  it('turns an image on its own line into an image block with the uploaded URL', () => {
+    const uploaded: Record<string, string> = { 'art/The Creator.png': 'https://assets.example/creator.png' }
+    const image = (src: string) => uploaded[src]
+    const { blocks, warnings } = markdownToBlocks('![The Creator](<art/The Creator.png>)\n\n![x](art/The%20Creator.png)', { resolve, image })
+    expect(warnings).toEqual([])
+    expect(blocks).toEqual([
+      { kind: 'image', url: 'https://assets.example/creator.png', alt: 'The Creator' },
+      { kind: 'image', url: 'https://assets.example/creator.png', alt: 'x' },
+    ])
+  })
+
+  it('passes image URLs through, so mirror images round-trip', () => {
+    const md = '![Portrait](https://assets.legendkeeper.com/a.png)'
+    const { blocks } = markdownToBlocks(md, { resolve })
+    expect(blocks).toEqual([{ kind: 'image', url: 'https://assets.legendkeeper.com/a.png', alt: 'Portrait' }])
+    expect(blocksToMarkdown(blocks, { nameOf }).trim()).toBe(md)
+  })
+
+  it('skips images with a warning when there is no upload or they sit inside text', () => {
+    const missing = markdownToBlocks('![portrait](portrait.png)', { resolve })
+    expect(missing.blocks).toEqual([])
+    expect(missing.warnings[0]).toMatch(/Image "portrait.png" skipped: no uploaded image/)
+    const inline = markdownToBlocks('See ![p](p.png) here.', { resolve, image: () => 'https://x/p.png' })
+    expect(inline.blocks).toEqual([{ kind: 'paragraph', content: [{ text: 'See  here.' }] }])
+    expect(inline.warnings[0]).toMatch(/on a line of its own/)
+  })
+})
+
+describe('localImages', () => {
+  it('finds local image paths anywhere in the Markdown, once each, and ignores URLs', () => {
+    const sources = ['![a](<img/A one.png>)\n\n- ![b](img/b.png)\n\n| x |\n| --- |\n| ![c](c.png) |', '![a](img/A%20one.png) ![w](https://x/w.png)']
+    expect(localImages(sources)).toEqual(['img/A one.png', 'img/b.png', 'c.png'])
   })
 })
 

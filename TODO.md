@@ -26,6 +26,8 @@
 
 - [ ] Verify the plugin installs and runs unchanged in Claude Desktop's Cowork mode.
 - [ ] Verify how users re-enter a sensitive `userConfig` value (the setup skill's wording).
-- [ ] Images: upload scans or portraits through `assets.uploadImage` and support `![](...)` in the dialect.
+- [x] Images: `![alt](<path>)` on its own line, or as a sidebar `Image:` value, uploads a workspace file once into the asset folder "Uploaded by Claude" (matched by hash on retry). Checked live, including a retry.
+- [ ] Check whether players can browse the asset library. If they can, an image for a hidden page or GM tab leaks; upload those as hidden assets.
+- [ ] Pictures that exist only in a Cowork conversation can't be uploaded; check whether Cowork can save an attachment into the workspace.
 - [ ] Mirror map pins (names, links) and board text.
 - [ ] Decide whether to submit to Anthropic's plugin directory; that needs icon, support and privacy URLs in `plugin.json`.

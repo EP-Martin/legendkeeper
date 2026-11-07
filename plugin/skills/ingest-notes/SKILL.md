@@ -28,6 +28,7 @@ Working folders under the workspace (create them as needed):
 1. Sources come from images attached in the conversation, paths in the arguments, or everything in `legendkeeper/inbox/`. Order pages by their number or filename and confirm the order if it's unclear. Copy each file into `sources/<slug>/`.
 2. Transcribe each page into `sources/<slug>/transcript.md` under a `## Page N` heading, following [transcription.md](transcription.md), which also covers typeset pages. For more than six pages, transcribe in parallel with one subagent per page, each writing `transcript-pN.md`, then merge.
 3. Never correct a name while transcribing. Spelling is reconciled in step 3.
+4. Pictures in the sources (portraits, symbols, maps) can go on pages only as image files in the workspace. Save each one you can into `sources/<slug>/images/`, named for its subject; otherwise ask the user to save it there. Never use a picture as lore beyond what it plainly shows.
 
 ## 2. Extract
 
@@ -62,7 +63,7 @@ Write `plans/<slug>.md` from [plan-template.md](plan-template.md). Then tell the
 
 For each checked item, write a draft file:
 
-- **Create:** `drafts/<slug>/<Page Name>.md`, in the draft format from the `lk-style` skill's [page-shapes.md](../lk-style/page-shapes.md#draft-file-format): frontmatter (`name`, `parent`, `template`, `tags`, `aliases`, `hidden`), an optional `## Sidebar`, and one `## Tab:` section per tab. Pick the template for each kind as the style guide says, or else the world's template that fits, and read its file in `_templates/` before drafting. `parent` is an existing page name or another page in the batch. Take tree placement from the style guide, or else from where similar pages live.
+- **Create:** `drafts/<slug>/<Page Name>.md`, in the draft format from the `lk-style` skill's [page-shapes.md](../lk-style/page-shapes.md#draft-file-format): frontmatter (`name`, `parent`, `template`, `tags`, `aliases`, `hidden`), an optional `## Sidebar` (with `Image: ![Name](<legendkeeper/sources/<slug>/images/Name.png>)` when the page has a picture), and one `## Tab:` section per tab. Pick the template for each kind as the style guide says, or else the world's template that fits, and read its file in `_templates/` before drafting. `parent` is an existing page name or another page in the batch. Take tree placement from the style guide, or else from where similar pages live.
 - **Append:** `drafts/<slug>/append--<Page Name>.md`, holding only the new section.
 - **Timeline events** stay in the plan's Timeline section.
 

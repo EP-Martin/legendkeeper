@@ -16,6 +16,8 @@ type Marks = Omit<TextRun, 'text'>
 export interface ParseOptions {
   /** Returns the resource id for a page name or alias, or undefined if unknown. */
   resolve: (name: string) => string | undefined
+  /** Returns the uploaded asset URL for a local image path, or undefined if it has none. */
+  image?: (src: string) => string | undefined
 }
 
 export interface ParseResult {
@@ -129,6 +131,9 @@ function blockToken(token: Token, options: ParseOptions, warnings: string[]): Bl
     case 'paragraph':
     case 'text': {
       const t = token as Tokens.Paragraph | Tokens.Text
+      // A paragraph that is only an image becomes an image block.
+      const parts = (t.tokens ?? []).filter((x) => !(x.type === 'text' && !x.raw.trim()))
+      if (parts.length === 1 && parts[0]!.type === 'image') return imageBlock(parts[0] as Tokens.Image, options, warnings)
       return paragraph(t.tokens ? inlineTokens(t.tokens, {}, options, warnings) : textRuns(t.text, {}))
     }
     case 'code': {
@@ -259,7 +264,7 @@ function inlineTokensRaw(tokens: Token[], marks: Marks, options: ParseOptions, w
         out.push(...linkRuns(token as Tokens.Link, marks, options, warnings))
         break
       case 'image':
-        warnings.push(`Image "${(token as Tokens.Image).href}" skipped: upload images with lk_upload_image first.`)
+        warnings.push(`Image "${imagePath((token as Tokens.Image).href)}" skipped: put an image on a line of its own.`)
         break
       default:
         out.push(...textRuns(token.raw, marks))
@@ -282,6 +287,26 @@ function linkRuns(token: Tokens.Link, marks: Marks, options: ParseOptions, warni
   const id = LK_RESOURCE.exec(token.href)?.[1]
   if (id) return [{ mention: { resourceId: id, text: label } }]
   return inlineTokens(token.tokens, { ...marks, link: token.href }, options, warnings)
+}
+
+const REMOTE = /^https?:\/\//i
+
+/** The path or URL an image token names, with %20-style escapes decoded for local paths. */
+export function imagePath(href: string): string {
+  if (REMOTE.test(href)) return href
+  try { return decodeURI(href) } catch { return href }
+}
+
+function imageBlock(token: Tokens.Image, options: ParseOptions, warnings: string[]): Block | undefined {
+  const src = imagePath(token.href)
+  // A URL passes through: LegendKeeper accepts its own asset URLs, as the mirror writes them.
+  const url = REMOTE.test(src) ? src : options.image?.(src)
+  if (!url) {
+    warnings.push(`Image "${src}" skipped: no uploaded image for it.`)
+    return undefined
+  }
+  const alt = decode(token.text).trim()
+  return { kind: 'image', url, ...(alt ? { alt } : {}) }
 }
 
 function textRuns(text: string, marks: Marks): Run[] {
@@ -397,7 +422,7 @@ function renderInfobox(rows: Block[], o: RenderOptions): string {
     } else {
       const title = propertyTitle((row as { title?: string }).title ?? row.kind)
       const body = row.kind === 'image'
-        ? `![${title}](${row.url})`
+        ? `![${row.alt || title}](${row.url})`
         : row.kind === 'resourceCollection' || row.kind === 'resourceLink'
           ? (row.items ?? []).map((item) => wikiLink(item.resourceId, undefined, o)).join(', ') || '(automatic list)'
           : renderBlock(row, o).replace(/\n+/g, ' ').replace(/^- /, '')

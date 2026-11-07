@@ -101,4 +101,4 @@ Summary: Harbor witch who runs the smuggling at [[Saltmouth Docks]].
 …
 ```
 
-Pass draft files to `lk_create_pages` as `drafts`; the server reads them. The `## Sidebar` infobox lines become sidebar text fields, the first `## Tab:` is the page's first tab, and `[GM only]` hides a later tab. The first tab can't be hidden. A draft without `## Tab:` headings is a single-tab page.
+Pass draft files to `lk_create_pages` as `drafts`; the server reads them. The `## Sidebar` infobox lines become sidebar fields (`Image: ![alt](<path>)` becomes the portrait), the first `## Tab:` is the page's first tab, and `[GM only]` hides a later tab. The first tab can't be hidden. A draft without `## Tab:` headings is a single-tab page.

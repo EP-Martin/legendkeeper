@@ -9,7 +9,7 @@ Uncheck anything you don't want. Answer questions inline after **Answer:**. Fix 
 
 ## Create
 
-- [x] **<Page Name>** (template: <Character | Location | … | none>) under **<Parent>**. Tags: <tags>. Aliases: <aliases>. Hidden: <no | yes>. Source: p1 L4-9.
+- [x] **<Page Name>** (template: <Character | Location | … | none>) under **<Parent>**. Tags: <tags>. Aliases: <aliases>. Hidden: <no | yes>. Image: <file in images/, or none>. Source: p1 L4-9.
   <one line: what the page will say>
 
 ## Append

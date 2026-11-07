@@ -6,6 +6,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod'
 import { createPages } from './create.js'
 import { readDrafts } from './drafts.js'
+import { prepareImages } from './images.js'
 import { digest, isDuplicate, noteReplays, stableId } from './ids.js'
 import { markdownToBlocks } from './markdown.js'
 import { pull, refresh, STYLE_TAG, Workspace } from './mirror.js'
@@ -131,13 +132,13 @@ const pageInput = z.object({
   tags: z.array(z.string()).default([]).describe('Tags. With a template, omit to keep the template\'s tags.'),
   aliases: z.array(z.string()).default([]).describe('Other names the page goes by; links and search match them.'),
   hidden: z.boolean().default(false).describe('Hide the whole page from players.'),
-  markdown: z.string().describe('Body of the first tab (a template\'s first tab, e.g. "Overview", or "Main") in the plugin Markdown dialect (see the lk-style skill). Do not repeat the title as a heading.'),
+  markdown: z.string().describe('Body of the first tab (a template\'s first tab, e.g. "Overview", or "Main") in the plugin Markdown dialect (see the lk-style skill). Do not repeat the title as a heading. An image on its own line, ![alt](<workspace path>), is uploaded.'),
   tabs: z.array(z.object({
     name: z.string().min(1).describe('Tab name. With a template, use the template\'s tab names.'),
     markdown: z.string(),
     hidden: z.boolean().default(false).describe('Hide this tab from players, e.g. "GM Notes" or "Backstory".'),
   })).max(4).default([]).describe('Further page tabs after the first.'),
-  sidebar: z.record(z.string(), z.string()).default({}).describe('Sidebar text fields by title, e.g. {"Summary": "…"}. Fills a template\'s field of that title; any other title becomes a new text field, in this order.'),
+  sidebar: z.record(z.string(), z.string()).default({}).describe('Sidebar fields by title, e.g. {"Summary": "…", "Image": "![Portrait](<legendkeeper/sources/x/images/Mira.png>)"}. Fills a template\'s field of that title; any other title becomes a new field, in this order. A value that is only an image makes an image field.'),
 })
 
 server.registerTool('lk_create_pages', {
@@ -182,7 +183,9 @@ server.registerTool('lk_append_to_page', {
   const doc = document ? docs.find((d) => d.name?.toLowerCase() === document.toLowerCase()) : docs[0]
   if (!doc) throw new Error(`"${resource.name}" has no page tab${document ? ` named "${document}"` : ''} to append to.`)
 
-  const parsed = markdownToBlocks(markdown, { resolve })
+  const images = await prepareImages(client(), ws.root, [markdown], false)
+  const parsed = markdownToBlocks(markdown, { resolve, image: images.image })
+  parsed.warnings.unshift(...images.warnings)
   const ref = { resourceId, documentId: doc.id }
   const call = digest(resourceId, doc.id, markdown)
   const blocks = parsed.blocks.map((block, i) => ({ ...block, id: stableId('b', call, String(i)) }))
