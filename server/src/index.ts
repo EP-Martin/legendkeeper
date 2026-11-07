@@ -5,7 +5,8 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod'
 import { createPages } from './create.js'
-import { digest, isDuplicate, stableId } from './ids.js'
+import { readDrafts } from './drafts.js'
+import { digest, isDuplicate, noteReplays, stableId } from './ids.js'
 import { markdownToBlocks } from './markdown.js'
 import { pull, refresh, STYLE_TAG, Workspace } from './mirror.js'
 import { buildResolver as resolverFor } from './resolve.js'
@@ -16,7 +17,7 @@ const apiKey = process.env.LEGENDKEEPER_API_KEY?.trim()
 const workspaceEnv = process.env.LEGENDKEEPER_WORKSPACE?.trim()
 const ws = new Workspace(workspaceEnv && !workspaceEnv.includes('${') ? workspaceEnv : process.cwd())
 // Large batch writes can take well over the SDK's default 30 s per attempt.
-const lk = apiKey ? new LegendKeeper({ apiKey, maxRetries: 4, timeoutMs: 120_000 }) : undefined
+const lk = apiKey ? new LegendKeeper({ apiKey, maxRetries: 4, timeoutMs: 120_000, fetch: noteReplays() }) : undefined
 
 const server = new McpServer({ name: 'legendkeeper', version: VERSION })
 
@@ -141,14 +142,18 @@ const pageInput = z.object({
 
 server.registerTool('lk_create_pages', {
   title: 'Create pages',
-  description: 'Creates up to 100 pages, plain or from the world\'s templates. [[Links]] between pages in the batch resolve, so create related NPCs, places and factions together. Run with dryRun first: it reports unresolved links and conversion warnings without writing anything. Safe to retry: calling again with the same input skips work already done.',
+  description: 'Creates up to 100 pages, plain or from the world\'s templates. Give either `drafts` (draft files in the lk-style draft format, or a drafts folder) or `pages`. [[Links]] between pages in the batch resolve, so create related NPCs, places and factions together. Run with dryRun first: it reports unresolved links and conversion warnings without writing anything. Safe to retry: calling again with the same input skips work already done.',
   inputSchema: {
-    pages: z.array(pageInput).min(1).max(100),
+    drafts: z.array(z.string().min(1)).min(1).max(100).optional().describe('Draft file paths relative to the workspace, or a folder of drafts (its append-- files are skipped), e.g. ["legendkeeper/drafts/2026-11-06-session-14"]. Each file is read as it is now.'),
+    pages: z.array(pageInput).min(1).max(100).optional().describe('Pages given inline, when there are no draft files.'),
     dryRun: z.boolean().default(false),
   },
   annotations: { readOnlyHint: false, destructiveHint: false },
-}, ({ pages, dryRun }) => run(async () => {
-  const result = await createPages(client(), ws, pages, dryRun)
+}, ({ drafts, pages, dryRun }) => run(async () => {
+  if (!drafts === !pages) throw new Error('Give either drafts or pages, not both.')
+  const input = drafts ? await readDrafts(ws.root, drafts) : pages!
+  if (input.length > 100) throw new Error(`${input.length} pages; send at most 100 per call, parents first.`)
+  const result = await createPages(client(), ws, input, dryRun)
   if ('dryRun' in result) return result
   const mirrored = await refresh(client(), ws, [...result.created, ...result.existing].map((r) => r.id))
   return {

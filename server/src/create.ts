@@ -1,7 +1,7 @@
 // Creates pages, plain or from the world's LegendKeeper templates, in one retry-safe call.
 import type { LegendKeeper } from '@legendkeeper/sdk'
 import type { Block } from '@legendkeeper/sdk/blocks'
-import { digest, idempotencyKey, isDuplicate, stableId } from './ids.js'
+import { digest, idempotencyKey, isDuplicate, stableId, wasReplayed } from './ids.js'
 import { markdownToBlocks } from './markdown.js'
 import type { Workspace } from './mirror.js'
 import { buildResolver } from './resolve.js'
@@ -98,7 +98,7 @@ export async function createPages(lk: LegendKeeper, ws: Workspace, pages: PageIn
         template: p.templateId ? pages.find((q) => q.name.trim() === p.name)!.template : undefined,
         tabs: p.tabs.map((t) => (t.hidden ? `${t.name} (hidden)` : t.name)),
         sidebar: Object.keys(p.sidebar),
-        parent: p.parentId ?? null,
+        parent: pages.find((q) => q.name.trim() === p.name)!.parent ?? null,
       })),
       warnings,
     }
@@ -163,8 +163,10 @@ async function createChunk(
       documents: p.tabs.filter((t) => !t.hidden).map((t) => ({ name: t.name, type: 'page' as const, blocks: t.blocks })),
     }))
     try {
-      const result = await lk.resources.createMany({ resources, idempotencyKey: idempotencyKey(projectId, JSON.stringify(resources)) })
-      created.push(...result.resources.map((r) => ({ id: r.id, name: r.name })))
+      const key = idempotencyKey(projectId, JSON.stringify(resources))
+      const result = await lk.resources.createMany({ resources, idempotencyKey: key })
+      // A replay means an earlier run of this same call created them.
+      ;(wasReplayed(key) ? existing : created).push(...result.resources.map((r) => ({ id: r.id, name: r.name })))
       return
     } catch (error) {
       // Pages from an earlier, interrupted run of this same call already exist. Skip them.

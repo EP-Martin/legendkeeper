@@ -48,6 +48,18 @@ Use these only when the world has no template for the kind and no existing pages
 - **Main:** an italic type line (`*Wondrous item, rare*`), a description, then its mechanics as plain paragraphs or a table.
 - **GM Notes** (hidden): origin secrets and curses.
 
+### Deity
+
+Gods sit under their pantheon's page, such as `Prime Deities`.
+
+- **Sidebar:** Summary, Portfolio, Holy Symbol, and the world's own facts, such as Saints or Dragons.
+- **Main:** `## Description` (nature, portfolio, where the god is felt), `## Depiction` (how art shows them), `## Myth`, then lesser figures such as saints or aspects as a table if the source gives them.
+- **GM Notes** (hidden): true nature and secret myths.
+
+### Pantheon
+
+- **Main:** a summary paragraph, a list linking each deity, shared beliefs or tenets as a list, and a table of the deities with their key facts. Myths that involve the whole pantheon get their own `##` sections.
+
 ### Session log
 
 Name it as the world names sessions (default `Session 14`), under the campaign's sessions parent.
@@ -89,4 +101,4 @@ Summary: Harbor witch who runs the smuggling at [[Saltmouth Docks]].
 …
 ```
 
-To build the tool call, use the `## Sidebar` infobox lines for `sidebar`. The first `## Tab:` becomes `markdown`, and each later `## Tab:` becomes an entry in `tabs`. `[GM only]` means `hidden: true`. A draft without `## Tab:` headings is a single-tab page, and its whole body becomes `markdown`.
+Pass draft files to `lk_create_pages` as `drafts`; the server reads them. The `## Sidebar` infobox lines become sidebar text fields, the first `## Tab:` is the page's first tab, and `[GM only]` hides a later tab. The first tab can't be hidden. A draft without `## Tab:` headings is a single-tab page.

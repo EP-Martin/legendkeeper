@@ -26,7 +26,7 @@ Working folders under the workspace (create them as needed):
 ## 1. Gather and transcribe
 
 1. Sources come from images attached in the conversation, paths in the arguments, or everything in `legendkeeper/inbox/`. Order pages by their number or filename and confirm the order if it's unclear. Copy each file into `sources/<slug>/`.
-2. Transcribe each page into `sources/<slug>/transcript.md` under a `## Page N` heading, following [transcription.md](transcription.md). For more than six pages, transcribe in parallel with one subagent per page, each writing `transcript-pN.md`, then merge.
+2. Transcribe each page into `sources/<slug>/transcript.md` under a `## Page N` heading, following [transcription.md](transcription.md), which also covers typeset pages. For more than six pages, transcribe in parallel with one subagent per page, each writing `transcript-pN.md`, then merge.
 3. Never correct a name while transcribing. Spelling is reconciled in step 3.
 
 ## 2. Extract
@@ -66,7 +66,7 @@ For each checked item, write a draft file:
 - **Append:** `drafts/<slug>/append--<Page Name>.md`, holding only the new section.
 - **Timeline events** stay in the plan's Timeline section.
 
-Then validate every create with **`lk_create_pages` and `dryRun: true`**. Fix each warning: correct the link spelling, add the missing page to the batch, or remove the brackets. Report the remaining warnings and point the user to the drafts folder. They can edit any draft before you apply.
+Then validate every create with **`lk_create_pages`, `drafts: ["legendkeeper/drafts/<slug>"]` and `dryRun: true`**. The server reads the draft files itself (it skips `append--` files), so never copy draft content into `pages`. Fix each warning: correct the link spelling, add the missing page to the batch, or remove the brackets. Report the remaining warnings and point the user to the drafts folder. They can edit any draft before you apply.
 
 **Stop until the user says to apply.**
 
@@ -74,7 +74,7 @@ Then validate every create with **`lk_create_pages` and `dryRun: true`**. Fix ea
 
 Reread every draft and the plan. Then, in this order:
 
-1. `lk_create_pages` with all creates in one call (up to 100 pages; split into more calls if needed, parents first). Map each draft to a page: frontmatter to the page fields, `## Sidebar` lines to `sidebar`, the first tab to `markdown`, later tabs to `tabs`, `[GM only]` to `hidden: true`.
+1. `lk_create_pages` with `drafts: ["legendkeeper/drafts/<slug>"]`, which creates every create draft in one call. Over 100 drafts, pass lists of file paths instead, parents first. A draft the server can't read is reported by file name; fix that file and repeat the call.
 2. `lk_append_to_page` once per append draft.
 3. `lk_add_timeline_events` for the checked timeline items. Use the timeline page and lane names from the style guide. If there are none, ask once and suggest recording them in the style guide.
 

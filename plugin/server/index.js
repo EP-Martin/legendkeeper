@@ -3913,50 +3913,50 @@ var require_fast_uri = __commonJS({
       schemelessOptions.skipEscape = true;
       return serialize(resolved, schemelessOptions);
     }
-    function resolveComponent(base, relative2, options, skipNormalization) {
+    function resolveComponent(base, relative3, options, skipNormalization) {
       const target = {};
       if (!skipNormalization) {
         base = parse3(serialize(base, options), options);
-        relative2 = parse3(serialize(relative2, options), options);
+        relative3 = parse3(serialize(relative3, options), options);
       }
       options = options || {};
-      if (!options.tolerant && relative2.scheme) {
-        target.scheme = relative2.scheme;
-        target.userinfo = relative2.userinfo;
-        target.host = relative2.host;
-        target.port = relative2.port;
-        target.path = removeDotSegments(relative2.path || "");
-        target.query = relative2.query;
+      if (!options.tolerant && relative3.scheme) {
+        target.scheme = relative3.scheme;
+        target.userinfo = relative3.userinfo;
+        target.host = relative3.host;
+        target.port = relative3.port;
+        target.path = removeDotSegments(relative3.path || "");
+        target.query = relative3.query;
       } else {
-        if (relative2.userinfo !== void 0 || relative2.host !== void 0 || relative2.port !== void 0) {
-          target.userinfo = relative2.userinfo;
-          target.host = relative2.host;
-          target.port = relative2.port;
-          target.path = removeDotSegments(relative2.path || "");
-          target.query = relative2.query;
+        if (relative3.userinfo !== void 0 || relative3.host !== void 0 || relative3.port !== void 0) {
+          target.userinfo = relative3.userinfo;
+          target.host = relative3.host;
+          target.port = relative3.port;
+          target.path = removeDotSegments(relative3.path || "");
+          target.query = relative3.query;
         } else {
-          if (!relative2.path) {
+          if (!relative3.path) {
             target.path = base.path;
-            if (relative2.query !== void 0) {
-              target.query = relative2.query;
+            if (relative3.query !== void 0) {
+              target.query = relative3.query;
             } else {
               target.query = base.query;
             }
           } else {
-            if (relative2.path[0] === "/") {
-              target.path = removeDotSegments(relative2.path);
+            if (relative3.path[0] === "/") {
+              target.path = removeDotSegments(relative3.path);
             } else {
               const baseHasAuthority = base.userinfo !== void 0 || base.host !== void 0 || base.port !== void 0;
               if (baseHasAuthority && !base.path) {
-                target.path = "/" + relative2.path;
+                target.path = "/" + relative3.path;
               } else if (!base.path) {
-                target.path = relative2.path;
+                target.path = relative3.path;
               } else {
-                target.path = base.path.slice(0, base.path.lastIndexOf("/") + 1) + relative2.path;
+                target.path = base.path.slice(0, base.path.lastIndexOf("/") + 1) + relative3.path;
               }
               target.path = base.scheme === void 0 && !baseHasAuthority && target.path[0] !== "/" ? removeDotSegmentsRelative(target.path) : removeDotSegments(target.path);
             }
-            target.query = relative2.query;
+            target.query = relative3.query;
           }
           target.userinfo = base.userinfo;
           target.host = base.host;
@@ -3964,7 +3964,7 @@ var require_fast_uri = __commonJS({
         }
         target.scheme = base.scheme;
       }
-      target.fragment = relative2.fragment;
+      target.fragment = relative3.fragment;
       return target;
     }
     function equal(uriA, uriB, options) {
@@ -39469,6 +39469,14 @@ var digest = (...parts) => createHash("sha256").update(parts.join("\0")).digest(
 var stableId = (prefix, ...parts) => `${prefix}${digest(...parts).slice(0, 23)}`;
 var idempotencyKey = (...parts) => `lkp-${digest(...parts).slice(0, 48)}`;
 var isDuplicate = (error62) => error62 instanceof ConflictError && error62.code === "DUPLICATE_ID";
+var replayed = /* @__PURE__ */ new Set();
+var noteReplays = (inner = fetch) => async (input2, init) => {
+  const response = await inner(input2, init);
+  const key = new Headers(init.headers).get("idempotency-key");
+  if (key && response.headers.get("idempotent-replay") === "true") replayed.add(key);
+  return response;
+};
+var wasReplayed = (key) => replayed.has(key);
 
 // node_modules/marked/lib/marked.esm.js
 function H() {
@@ -41376,7 +41384,7 @@ async function createPages(lk2, ws2, pages, dryRun) {
         template: p2.templateId ? pages.find((q2) => q2.name.trim() === p2.name).template : void 0,
         tabs: p2.tabs.map((t) => t.hidden ? `${t.name} (hidden)` : t.name),
         sidebar: Object.keys(p2.sidebar),
-        parent: p2.parentId ?? null
+        parent: pages.find((q2) => q2.name.trim() === p2.name).parent ?? null
       })),
       warnings
     };
@@ -41432,8 +41440,9 @@ async function createChunk(lk2, projectId, pages, created, existing) {
       documents: p2.tabs.filter((t) => !t.hidden).map((t) => ({ name: t.name, type: "page", blocks: t.blocks }))
     }));
     try {
-      const result = await lk2.resources.createMany({ resources, idempotencyKey: idempotencyKey(projectId, JSON.stringify(resources)) });
-      created.push(...result.resources.map((r) => ({ id: r.id, name: r.name })));
+      const key = idempotencyKey(projectId, JSON.stringify(resources));
+      const result = await lk2.resources.createMany({ resources, idempotencyKey: key });
+      (wasReplayed(key) ? existing : created).push(...result.resources.map((r) => ({ id: r.id, name: r.name })));
       return;
     } catch (error62) {
       if (!isDuplicate(error62) || attempt >= 2) throw error62;
@@ -41519,10 +41528,111 @@ async function addHiddenTabs(lk2, page) {
   }
 }
 
+// src/drafts.ts
+import { readdir, readFile, stat } from "node:fs/promises";
+import { isAbsolute, join, relative, resolve as resolvePath } from "node:path";
+var TAB = /^## Tab: *(.+?) *$/;
+var GM_ONLY = /\s*\[GM only\]$/i;
+function parseDraft(text, where) {
+  const fail = (message) => {
+    throw new Error(`${where}: ${message}`);
+  };
+  const match = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/.exec(text.replace(/^\uFEFF/, ""));
+  if (!match) return fail("missing the --- frontmatter block.");
+  const [, front = "", body = ""] = match;
+  const meta3 = frontmatter(front);
+  const name = typeof meta3.name === "string" ? meta3.name.trim() : "";
+  if (!name) fail("frontmatter has no name.");
+  const lines = body.replace(/\r\n/g, "\n").split("\n");
+  const first = lines.findIndex((l) => l.trim() !== "");
+  if (first >= 0 && lines[first]?.trim() === `# ${name}`) lines.splice(0, first + 1);
+  const sidebar = {};
+  const sidebarAt = lines.findIndex((l) => l.trim() === "## Sidebar");
+  if (sidebarAt >= 0) {
+    const open2 = lines.findIndex((l, i) => i > sidebarAt && l.trim() !== "");
+    if (open2 < 0 || lines[open2]?.trim() !== ":::infobox") fail('"## Sidebar" must be followed by an :::infobox block.');
+    const close = lines.findIndex((l, i) => i > open2 && l.trim() === ":::");
+    if (close < 0) fail("the sidebar :::infobox is not closed with :::.");
+    for (const line of lines.slice(open2 + 1, close)) {
+      const kv = /^([^:]+):\s*(.*)$/.exec(line.trim());
+      const [, key = "", value = ""] = kv ?? [];
+      if (key.trim() && value.trim()) sidebar[key.trim()] = value.trim();
+    }
+    lines.splice(sidebarAt, close - sidebarAt + 1);
+  }
+  const tabs = [];
+  const starts = lines.flatMap((l, i) => TAB.test(l) ? [i] : []);
+  let markdown;
+  if (starts.length === 0) {
+    markdown = lines.join("\n").trim();
+  } else {
+    if (lines.slice(0, starts[0]).some((l) => l.trim() !== "")) fail('text before the first "## Tab:" heading belongs in a tab.');
+    for (const [n, start] of starts.entries()) {
+      const heading = TAB.exec(lines[start] ?? "")?.[1] ?? "";
+      tabs.push({
+        name: heading.replace(GM_ONLY, "").trim(),
+        hidden: GM_ONLY.test(heading),
+        markdown: lines.slice(start + 1, starts[n + 1] ?? lines.length).join("\n").trim()
+      });
+    }
+    const main = tabs.shift();
+    if (main.hidden) fail("the first tab cannot be [GM only]. Put GM material in a later tab.");
+    markdown = main.markdown;
+  }
+  const list2 = (v) => Array.isArray(v) ? v.map(String).map((s) => s.trim()).filter(Boolean) : [];
+  const text_ = (v) => typeof v === "string" && v.trim() ? v.trim() : void 0;
+  return {
+    name,
+    ...text_(meta3.parent) ? { parent: text_(meta3.parent) } : {},
+    ...text_(meta3.template) ? { template: text_(meta3.template) } : {},
+    tags: list2(meta3.tags),
+    aliases: list2(meta3.aliases),
+    hidden: meta3.hidden === true,
+    markdown,
+    tabs,
+    sidebar
+  };
+}
+function frontmatter(block) {
+  const meta3 = {};
+  for (const line of block.split(/\r?\n/)) {
+    const [, key, rest = ""] = /^([A-Za-z]\w*):\s*(.*)$/.exec(line) ?? [];
+    if (!key) continue;
+    const raw = rest.trim();
+    let value = raw;
+    try {
+      value = JSON.parse(raw);
+    } catch {
+      if (raw === "") value = void 0;
+      else if (raw.startsWith("[") && raw.endsWith("]")) value = raw.slice(1, -1).split(",").map((s) => s.trim().replace(/^(['"])(.*)\1$/, "$2")).filter(Boolean);
+      else value = raw.replace(/^(['"])(.*)\1$/, "$2");
+    }
+    meta3[key] = value;
+  }
+  return meta3;
+}
+async function readDrafts(root, paths) {
+  const base = resolvePath(root);
+  const files = [];
+  for (const path of paths) {
+    const full = resolvePath(base, path);
+    const rel = relative(base, full);
+    if (rel.startsWith("..") || isAbsolute(rel)) throw new Error(`Draft path "${path}" is outside the workspace.`);
+    if ((await stat(full)).isDirectory()) {
+      const names = (await readdir(full)).filter((f) => f.endsWith(".md") && !f.startsWith("append--")).sort();
+      if (names.length === 0) throw new Error(`No drafts in "${path}".`);
+      files.push(...names.map((f) => join(full, f)));
+    } else {
+      files.push(full);
+    }
+  }
+  return Promise.all(files.map(async (f) => parseDraft(await readFile(f, "utf8"), relative(base, f).split("\\").join("/"))));
+}
+
 // src/mirror.ts
 import { existsSync } from "node:fs";
-import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
-import { dirname, join, relative } from "node:path";
+import { mkdir, readFile as readFile2, rename, rm, writeFile } from "node:fs/promises";
+import { dirname, join as join2, relative as relative2 } from "node:path";
 var STYLE_TAG = "claude-style";
 var Workspace = class {
   constructor(root) {
@@ -41530,23 +41640,23 @@ var Workspace = class {
   }
   root;
   get base() {
-    return join(this.root, "legendkeeper");
+    return join2(this.root, "legendkeeper");
   }
   get world() {
-    return join(this.base, "world");
+    return join2(this.base, "world");
   }
   get indexFile() {
-    return join(this.base, ".state", "index.json");
+    return join2(this.base, ".state", "index.json");
   }
   rel(path) {
-    return relative(this.root, path).split("\\").join("/");
+    return relative2(this.root, path).split("\\").join("/");
   }
   abs(rel) {
-    return join(this.root, rel);
+    return join2(this.root, rel);
   }
   async readIndex() {
     try {
-      return JSON.parse(await readFile(this.indexFile, "utf8"));
+      return JSON.parse(await readFile2(this.indexFile, "utf8"));
     } catch {
       return void 0;
     }
@@ -41554,7 +41664,7 @@ var Workspace = class {
   async writeIndex(index) {
     await mkdir(dirname(this.indexFile), { recursive: true });
     await writeFile(this.indexFile, JSON.stringify(index, null, 2));
-    await writeFile(join(this.world, "INDEX.md"), renderIndex(index, this));
+    await writeFile(join2(this.world, "INDEX.md"), renderIndex(index, this));
   }
 };
 async function pull(lk2, ws2) {
@@ -41563,7 +41673,7 @@ async function pull(lk2, ws2) {
   for await (const item of await lk2.resources.list({ limit: 100 })) items.push(item);
   const byId = new Map(items.map((item) => [item.id, item]));
   const nameOf = (id) => byId.get(id)?.name;
-  const files = assignFiles(items, byId, ws2.world, join(ws2.world, "_templates"));
+  const files = assignFiles(items, byId, ws2.world, join2(ws2.world, "_templates"));
   const result = {
     index: { projectId: project.id, projectName: project.name ?? "Untitled project", pulledAt: (/* @__PURE__ */ new Date()).toISOString(), entries: [] },
     pages: 0,
@@ -41580,7 +41690,7 @@ async function pull(lk2, ws2) {
     result.timelines += rendered.timelines;
     result.skipped.push(...rendered.skipped);
     result.warnings.push(...rendered.warnings);
-    const target = join(staging, relative(ws2.world, files.get(item.id)));
+    const target = join2(staging, relative2(ws2.world, files.get(item.id)));
     await mkdir(dirname(target), { recursive: true });
     await writeFile(target, rendered.text);
   });
@@ -41605,9 +41715,9 @@ async function refresh(lk2, ws2, resourceIds) {
     let file2 = existing?.file;
     if (!file2) {
       const parent = resource.parentId ? byId.get(resource.parentId) : void 0;
-      const dir = parent ? ws2.abs(parent.file.replace(/\.md$/, "")) : resource.parentId === "templates" ? join(ws2.world, "_templates") : ws2.world;
-      let candidate = join(dir, `${safeName(resource.name)}.md`);
-      if (existsSync(candidate)) candidate = join(dir, `${safeName(resource.name)} (${id.slice(-6)}).md`);
+      const dir = parent ? ws2.abs(parent.file.replace(/\.md$/, "")) : resource.parentId === "templates" ? join2(ws2.world, "_templates") : ws2.world;
+      let candidate = join2(dir, `${safeName(resource.name)}.md`);
+      if (existsSync(candidate)) candidate = join2(dir, `${safeName(resource.name)} (${id.slice(-6)}).md`);
       file2 = ws2.rel(candidate);
     }
     const ancestors = chain(entryFor(resource, file2, false, false), byId);
@@ -41682,7 +41792,7 @@ ${body}` : body);
     updatedAt: item.updatedAt ?? null,
     documents
   };
-  out.text = `${frontmatter(front)}
+  out.text = `${frontmatter2(front)}
 # ${item.name}
 
 ${sections.filter(Boolean).join("\n\n")}
@@ -41754,9 +41864,9 @@ function assignFiles(items, byId, root, templateRoot) {
     const parent = item.parentId ? byId.get(item.parentId) : void 0;
     const dir = parent && !visiting.has(parent.id) ? fileFor(parent).replace(/\.md$/, "") : item.parentId === "templates" ? templateRoot : root;
     let stem = safeName(item.name);
-    if (used.has(join(dir, stem).toLowerCase())) stem = `${stem} (${item.id.slice(-6)})`;
-    used.add(join(dir, stem).toLowerCase());
-    const file2 = join(dir, `${stem}.md`);
+    if (used.has(join2(dir, stem).toLowerCase())) stem = `${stem} (${item.id.slice(-6)})`;
+    used.add(join2(dir, stem).toLowerCase());
+    const file2 = join2(dir, `${stem}.md`);
     files.set(item.id, file2);
     visiting.delete(item.id);
     return file2;
@@ -41768,7 +41878,7 @@ function safeName(name) {
   const cleaned = name.replace(/[\\/:*?"<>|\u0000-\u001f]/g, "-").replace(/^\.+/, "").trim().slice(0, 80);
   return cleaned || "Untitled";
 }
-function frontmatter(data) {
+function frontmatter2(data) {
   return `---
 ${Object.entries(data).map(([k, v]) => `${k}: ${JSON.stringify(v)}`).join("\n")}
 ---
@@ -41776,7 +41886,7 @@ ${Object.entries(data).map(([k, v]) => `${k}: ${JSON.stringify(v)}`).join("\n")}
 }
 function renderIndex(index, ws2) {
   const row = (e) => {
-    const link2 = mdPath(relative(ws2.world, ws2.abs(e.file)));
+    const link2 = mdPath(relative2(ws2.world, ws2.abs(e.file)));
     const extra = [
       e.aliases.length ? `aka ${e.aliases.join(", ")}` : "",
       e.tags.length ? `tags: ${e.tags.join(", ")}` : "",
@@ -41792,7 +41902,7 @@ function renderIndex(index, ws2) {
     `# ${index.projectName}`,
     "",
     `Pulled ${index.pulledAt}. ${index.entries.length} resources.`,
-    style ? `Style guide: [${style.name}](${mdPath(relative(ws2.world, ws2.abs(style.file)))})` : `Style guide: none yet. Tag a hidden page "${STYLE_TAG}".`,
+    style ? `Style guide: [${style.name}](${mdPath(relative2(ws2.world, ws2.abs(style.file)))})` : `Style guide: none yet. Tag a hidden page "${STYLE_TAG}".`,
     "",
     ...rows,
     "",
@@ -41814,7 +41924,7 @@ var VERSION = "0.1.0";
 var apiKey = process.env.LEGENDKEEPER_API_KEY?.trim();
 var workspaceEnv = process.env.LEGENDKEEPER_WORKSPACE?.trim();
 var ws = new Workspace(workspaceEnv && !workspaceEnv.includes("${") ? workspaceEnv : process.cwd());
-var lk = apiKey ? new LegendKeeper({ apiKey, maxRetries: 4, timeoutMs: 12e4 }) : void 0;
+var lk = apiKey ? new LegendKeeper({ apiKey, maxRetries: 4, timeoutMs: 12e4, fetch: noteReplays() }) : void 0;
 var server = new McpServer({ name: "legendkeeper", version: VERSION });
 function client() {
   if (!lk) throw new Error(`No API key. Set the plugin's "LegendKeeper API key" option (Project Settings \u2192 Developers \u2192 API Keys in LegendKeeper).`);
@@ -41916,14 +42026,18 @@ var pageInput = external_exports.object({
 });
 server.registerTool("lk_create_pages", {
   title: "Create pages",
-  description: "Creates up to 100 pages, plain or from the world's templates. [[Links]] between pages in the batch resolve, so create related NPCs, places and factions together. Run with dryRun first: it reports unresolved links and conversion warnings without writing anything. Safe to retry: calling again with the same input skips work already done.",
+  description: "Creates up to 100 pages, plain or from the world's templates. Give either `drafts` (draft files in the lk-style draft format, or a drafts folder) or `pages`. [[Links]] between pages in the batch resolve, so create related NPCs, places and factions together. Run with dryRun first: it reports unresolved links and conversion warnings without writing anything. Safe to retry: calling again with the same input skips work already done.",
   inputSchema: {
-    pages: external_exports.array(pageInput).min(1).max(100),
+    drafts: external_exports.array(external_exports.string().min(1)).min(1).max(100).optional().describe('Draft file paths relative to the workspace, or a folder of drafts (its append-- files are skipped), e.g. ["legendkeeper/drafts/2026-11-06-session-14"]. Each file is read as it is now.'),
+    pages: external_exports.array(pageInput).min(1).max(100).optional().describe("Pages given inline, when there are no draft files."),
     dryRun: external_exports.boolean().default(false)
   },
   annotations: { readOnlyHint: false, destructiveHint: false }
-}, ({ pages, dryRun }) => run(async () => {
-  const result = await createPages(client(), ws, pages, dryRun);
+}, ({ drafts, pages, dryRun }) => run(async () => {
+  if (!drafts === !pages) throw new Error("Give either drafts or pages, not both.");
+  const input2 = drafts ? await readDrafts(ws.root, drafts) : pages;
+  if (input2.length > 100) throw new Error(`${input2.length} pages; send at most 100 per call, parents first.`);
+  const result = await createPages(client(), ws, input2, dryRun);
   if ("dryRun" in result) return result;
   const mirrored = await refresh(client(), ws, [...result.created, ...result.existing].map((r) => r.id));
   return {

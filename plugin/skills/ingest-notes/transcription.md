@@ -11,3 +11,13 @@ The transcript is evidence. It records what is on the page, not what the writer 
 - Flag GM-only cues as `[GM]` at the start of the line. Cues include "DM only," "secret," "don't tell," "!!" and a circled or boxed note. Also flag a different ink color the writer clearly uses for private notes.
 - For printed adventure pages with handwritten annotations, transcribe the annotations and only enough of the printed text to anchor them: `[printed: "The door is locked (DC 15)"] [note: "they kicked it in, Brannoc hurt"]`. Don't reproduce published adventure text wholesale. Summarize it.
 - Put dice rolls, initiative lists and HP tallies under an `### Ephemera` heading. Keep them for the session log, but never extract them as lore.
+
+## Typeset sources
+
+The user's own typeset writing (a setting book, a homebrew PDF, a printout) follows the same rules, with these changes:
+
+- Number one line per paragraph, list item or table row. Printed line breaks are layout, not meaning.
+- Keep headings as `###` lines so the plan can cite sections.
+- Read tables from the page image, one row per line as `| cell | cell |`. A PDF's text layer often scrambles table columns and rows. Check every row against the image.
+- Read multi-column pages column by column, and skip running heads and page numbers.
+- Treat nothing as GM-only unless the page says so. A player-facing book has no secret cues.
