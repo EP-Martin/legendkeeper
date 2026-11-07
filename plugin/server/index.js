@@ -42262,7 +42262,8 @@ server.registerTool("lk_add_timeline_events", {
       end: external_exports.string().optional(),
       link: external_exports.string().optional().describe("Page this event is about (name, alias or id)."),
       note: external_exports.boolean().default(false).describe("A note instead of an event."),
-      hidden: external_exports.boolean().default(false).describe("Hide from players.")
+      hidden: external_exports.boolean().default(false).describe("Hide from players."),
+      color: external_exports.string().regex(/^#[0-9A-Fa-f]{6}$/).optional().describe("Fill color as #RRGGBB. Give each lane its own color so the timeline is readable at a glance; without one, every event is the same blue.")
     })).min(1).max(50)
   },
   annotations: { readOnlyHint: false, destructiveHint: false }
@@ -42307,7 +42308,8 @@ server.registerTool("lk_add_timeline_events", {
         formattedStart: event.start,
         ...event.end ? { formattedEnd: event.end } : {},
         ...linkId ? { uri: `lk://resources/${linkId}` } : {},
-        ...event.hidden ? { isHidden: true } : {}
+        ...event.hidden ? { isHidden: true } : {},
+        ...event.color ? { color: event.color } : {}
       });
     } catch (error62) {
       if (!isDuplicate(error62)) throw error62;

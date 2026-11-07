@@ -77,7 +77,7 @@ Reread every draft and the plan. Then, in this order:
 
 1. `lk_create_pages` with `drafts: ["legendkeeper/drafts/<slug>"]`, which creates every create draft in one call. Over 100 drafts, pass lists of file paths instead, parents first. A draft the server can't read is reported by file name; fix that file and repeat the call.
 2. `lk_append_to_page` once per append draft.
-3. `lk_add_timeline_events` for the checked timeline items. Use the timeline page and lane names from the style guide. If there are none, ask once and suggest recording them in the style guide.
+3. `lk_add_timeline_events` for the checked timeline items. Use the timeline page, lane names and lane colors from the style guide. If there are none, ask once and suggest recording them in the style guide. Give every event its lane's `color`, so lanes read apart at a glance.
 
 After each call, tick the item in the plan and record the created page's id next to it. If a call fails, stop, leave the remaining items unticked, and report the error with its `requestId`. If the error carries a hint that the write may have completed, repeat the **identical** call once: the tools recognize work already done and skip it. Never retry with changed input or under a new name, because that creates duplicates.
 

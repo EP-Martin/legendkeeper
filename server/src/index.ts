@@ -244,6 +244,7 @@ server.registerTool('lk_add_timeline_events', {
       link: z.string().optional().describe('Page this event is about (name, alias or id).'),
       note: z.boolean().default(false).describe('A note instead of an event.'),
       hidden: z.boolean().default(false).describe('Hide from players.'),
+      color: z.string().regex(/^#[0-9A-Fa-f]{6}$/).optional().describe('Fill color as #RRGGBB. Give each lane its own color so the timeline is readable at a glance; without one, every event is the same blue.'),
     })).min(1).max(50),
   },
   annotations: { readOnlyHint: false, destructiveHint: false },
@@ -293,6 +294,7 @@ server.registerTool('lk_add_timeline_events', {
       ...(event.end ? { formattedEnd: event.end } : {}),
       ...(linkId ? { uri: `lk://resources/${linkId}` } : {}),
       ...(event.hidden ? { isHidden: true } : {}),
+      ...(event.color ? { color: event.color } : {}),
       })
     } catch (error) {
       if (!isDuplicate(error)) throw error
