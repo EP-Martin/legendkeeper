@@ -70,7 +70,11 @@ Name it as the world names sessions (default `Session 14`), under the campaign's
 
 ## Appending to an existing page
 
-Add a self-contained section with its own heading, such as `## Session 14`, followed by a short list of what happened. Appends go to the end of the page's first page tab. Never append a second infobox. A changed fact in an infobox or the sidebar is a **proposal** in the plan for the user to apply.
+Add a self-contained section with its own heading, such as `## Session 14`, followed by a short list of what happened. Appends go to the end of the page's first page tab. Never append a second infobox. A changed fact in the sidebar or the existing text is an **edit** (`lk_edit_page`), not an append, so the page doesn't contradict itself.
+
+## Editing an existing page
+
+`lk_edit_page` replaces one section (the text under a heading, through its subsections), a whole tab, sidebar fields, or timeline events. Copy `old` from the mirror file exactly: for a multi-tab page, leave out the mirror's `## Tab: Name` line, which isn't part of the tab. Prefer the smallest section that holds the change, and keep its other wording unchanged. A section holding content the API can't read can't be replaced; say so and leave it to the user.
 
 ## Draft file format
 

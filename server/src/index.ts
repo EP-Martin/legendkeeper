@@ -5,12 +5,14 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod'
 import { createPages } from './create.js'
+import { editPage } from './edit.js'
 import { readDrafts } from './drafts.js'
 import { prepareImages } from './images.js'
 import { clientFetch, digest, isDuplicate, stableId } from './ids.js'
 import { markdownToBlocks } from './markdown.js'
 import { pull, refresh, STYLE_TAG, Workspace } from './mirror.js'
 import { buildResolver as resolverFor } from './resolve.js'
+import { laneFinder } from './timeline.js'
 
 const VERSION = '0.1.0'
 const apiKey = process.env.LEGENDKEEPER_API_KEY?.trim()
@@ -261,20 +263,7 @@ server.registerTool('lk_add_timeline_events', {
   if (!doc) doc = await lkc.documents.create({ resourceId }, { name: timeline ?? 'Timeline', type: 'time' })
   const ref = { resourceId, documentId: doc.id }
 
-  const lanes = new Map<string, string>()
-  let lastRank = 'a0'
-  for (const lane of (await lkc.timelines.listLanes(ref)).data) {
-    lanes.set(lane.name.toLowerCase(), lane.id)
-    if (lane.rank && lane.rank > lastRank) lastRank = lane.rank
-  }
-  const laneFor = async (name: string) => {
-    const existing = lanes.get(name.toLowerCase())
-    if (existing) return existing
-    lastRank = `${lastRank}V`
-    const lane = await lkc.timelines.createLane(ref, { name, rank: lastRank, size: 'lg' })
-    lanes.set(name.toLowerCase(), lane.id)
-    return lane.id
-  }
+  const { laneFor } = await laneFinder(lkc, ref)
 
   const created: { name: string; start?: string; end?: string }[] = []
   const existing: string[] = []
@@ -305,6 +294,43 @@ server.registerTool('lk_add_timeline_events', {
   }
   const mirrored = await refresh(lkc, ws, [resourceId])
   return { timeline: `${resource.name} / ${doc.name}`, created, alreadyExisted: existing.length ? existing : undefined, mirrored, warnings }
+}))
+
+const hex = z.string().regex(/^#[0-9A-Fa-f]{6}$/)
+
+server.registerTool('lk_edit_page', {
+  title: 'Edit page',
+  description: 'Corrects content already on a page: replaces a section of a tab (the text under one heading) or a whole tab, sets sidebar fields, and updates, moves or deletes timeline events. Each replacement gives the `old` text it expects, copied from the mirror; if the page changed since the pull, nothing is written and the current text is returned. Run with dryRun first. Safe to retry: an identical call finishes work left undone and skips what is already done. Use only for changes the user approved; to add new material, use lk_append_to_page.',
+  inputSchema: {
+    page: z.string().describe('Page name, alias or resource id.'),
+    sections: z.array(z.object({
+      tab: z.string().optional().describe('Page tab name. Defaults to the first page tab.'),
+      section: z.string().optional().describe('Heading text of the section to replace, e.g. "Elysium". Its heading stays; the blocks under it, up to the next heading of the same or a higher level, are replaced. Omit to replace the whole tab.'),
+      old: z.string().describe('The current Markdown of that section body (or whole tab), exactly as in the mirror file. "" for an empty section.'),
+      markdown: z.string().describe('The new Markdown for the section body (or whole tab), in the plugin dialect. "" empties the section.'),
+    })).max(20).default([]),
+    sidebar: z.record(z.string(), z.string()).default({}).describe('Sidebar fields to set, by title, as in lk_create_pages. An existing field of that title is overwritten; a new title adds a field.'),
+    timeline: z.string().optional().describe('Timeline tab name for the event edits. Defaults to the first timeline tab.'),
+    events: z.array(z.object({
+      event: z.string().min(1).describe('Current event name, as in the mirror, or the event id when names repeat.'),
+      name: z.string().min(1).optional().describe('New name.'),
+      lane: z.string().min(1).optional().describe('Lane to move the event to, by name; a missing lane is created.'),
+      start: z.string().optional().describe('New start date in the timeline calendar.'),
+      end: z.string().optional().describe('New end date.'),
+      link: z.string().optional().describe('Page to link (name, alias or id); "" removes the link.'),
+      hidden: z.boolean().optional(),
+      color: hex.optional().describe('New fill color, #RRGGBB.'),
+      delete: z.boolean().optional().describe('Delete the event.'),
+    })).max(50).default([]),
+    dryRun: z.boolean().default(false),
+  },
+  annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true },
+}, (input) => run(async () => {
+  if (!input.sections.length && !Object.keys(input.sidebar).length && !input.events.length) throw new Error('Nothing to edit: give sections, sidebar or events.')
+  const result = await editPage(client(), ws, input)
+  if ('dryRun' in result) return result
+  const mirrored = await refresh(client(), ws, [result.resourceId])
+  return { ...result, resourceId: undefined, mirrored }
 }))
 
 await server.connect(new StdioServerTransport())

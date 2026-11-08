@@ -65,7 +65,7 @@ describe('parseDraft', () => {
 })
 
 describe('readDrafts', () => {
-  it('reads a folder of create drafts, skips append drafts, and refuses paths outside the workspace', async () => {
+  it('reads a folder of create drafts, skips append and edit drafts, and refuses paths outside the workspace', async () => {
     const root = await mkdtemp(join(tmpdir(), 'lk-drafts-'))
     const dir = join(root, 'legendkeeper', 'drafts', 'batch')
     await mkdir(dir, { recursive: true })

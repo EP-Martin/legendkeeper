@@ -52,4 +52,4 @@ Judge contradictions against the world, not against real-world logic. If the pag
 3. Offer next steps:
    - Fix the text. Only if asked; show the changes as edits.
    - Record the new facts in LegendKeeper. Do this through the `/legendkeeper:ingest-notes` plan and drafts flow, treating the text as the source. The gates still apply.
-   - Fix a world conflict. That is a manual edit in LegendKeeper; say which page and what to change.
+   - Fix a world conflict. Say which page is wrong and what to change; once the user approves the exact wording, apply it with `lk_edit_page`.

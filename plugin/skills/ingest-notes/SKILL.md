@@ -48,14 +48,15 @@ For each entity, search the mirror for its name, its aliases and plausible varia
 | **New** | Not in the world | Create a page |
 | **Known, new facts** | Exists; the notes add something | Append a section |
 | **Known, nothing new** | Exists; the notes only mention it | None (the mention becomes a link) |
-| **Conflict** | Notes contradict a page | Ask the user. Never pick a side silently. |
+| **Known, changed facts** | The notes correct or update a page (a death, a new title, a fixed date) | Edit the page |
+| **Conflict** | Notes contradict a page, and it's unclear which is right | Ask the user. Never pick a side silently. |
 | **Identity unclear** | Might be an existing entity | Ask the user. Name the candidates. |
 
 Flag minor characters too, but default them to **mention only** unless the notes give them a name *and* at least one fact worth keeping. Wikis bloat fast.
 
 ## 4. Plan (gate 1)
 
-Write `plans/<slug>.md` from [plan-template.md](plan-template.md). Then tell the user in a few lines what it will create, append and add to the timeline, and what needs their decision. Ask them to review and edit the plan: they can uncheck items, answer questions inline and fix names.
+Write `plans/<slug>.md` from [plan-template.md](plan-template.md). Then tell the user in a few lines what it will create, append, edit and add to the timeline, and what needs their decision. A conflict the user settles in favor of the notes becomes an Edit item. Ask them to review and edit the plan: they can uncheck items, answer questions inline and fix names.
 
 **Stop here until the user approves.** Reread the plan file before going on, because the user may have edited it.
 
@@ -65,9 +66,10 @@ For each checked item, write a draft file:
 
 - **Create:** `drafts/<slug>/<Page Name>.md`, in the draft format from the `lk-style` skill's [page-shapes.md](../lk-style/page-shapes.md#draft-file-format): frontmatter (`name`, `parent`, `template`, `tags`, `aliases`, `hidden`), an optional `## Sidebar` (with `Image: ![Name](<legendkeeper/sources/<slug>/images/Name.png>)` when the page has a picture), and one `## Tab:` section per tab. Pick the template for each kind as the style guide says, or else the world's template that fits, and read its file in `_templates/` before drafting. `parent` is an existing page name or another page in the batch. Take tree placement from the style guide, or else from where similar pages live.
 - **Append:** `drafts/<slug>/append--<Page Name>.md`, holding only the new section.
+- **Edit:** `drafts/<slug>/edit--<Page Name>.md`, listing each change as the section's heading (or `whole tab`), its tab, the current text copied exactly from the mirror, and the new text. For sidebar fields and timeline events, list the field or event and its new value. Change only what the plan names; keep every other word of the section as it is.
 - **Timeline events** stay in the plan's Timeline section.
 
-Then validate every create with **`lk_create_pages`, `drafts: ["legendkeeper/drafts/<slug>"]` and `dryRun: true`**. The server reads the draft files itself (it skips `append--` files), so never copy draft content into `pages`. Fix each warning: correct the link spelling, add the missing page to the batch, or remove the brackets. Report the remaining warnings and point the user to the drafts folder. They can edit any draft before you apply.
+Then validate every edit with `lk_edit_page` and `dryRun: true`. Then validate every create with **`lk_create_pages`, `drafts: ["legendkeeper/drafts/<slug>"]` and `dryRun: true`**. The server reads the draft files itself (it skips `append--` and `edit--` files), so never copy draft content into `pages`. Fix each warning: correct the link spelling, add the missing page to the batch, or remove the brackets. Report the remaining warnings and point the user to the drafts folder. They can edit any draft before you apply.
 
 **Stop until the user says to apply.**
 
@@ -77,7 +79,8 @@ Reread every draft and the plan. Then, in this order:
 
 1. `lk_create_pages` with `drafts: ["legendkeeper/drafts/<slug>"]`, which creates every create draft in one call. Over 100 drafts, pass lists of file paths instead, parents first. A draft the server can't read is reported by file name; fix that file and repeat the call.
 2. `lk_append_to_page` once per append draft.
-3. `lk_add_timeline_events` for the checked timeline items. Use the timeline page, lane names and lane colors from the style guide. If there are none, ask once and suggest recording them in the style guide. Give every event its lane's `color`, so lanes read apart at a glance.
+3. `lk_edit_page` once per edit draft, with `old` copied from the draft. If it reports that a section no longer matches, the page changed in LegendKeeper since the pull: show the user the current text and redo that edit from it.
+4. `lk_add_timeline_events` for the checked timeline items. Use the timeline page, lane names and lane colors from the style guide. If there are none, ask once and suggest recording them in the style guide. Give every event its lane's `color`, so lanes read apart at a glance.
 
 After each call, tick the item in the plan and record the created page's id next to it. If a call fails, stop, leave the remaining items unticked, and report the error with its `requestId`. If the error carries a hint that the write may have completed, repeat the **identical** call once: the tools recognize work already done and skip it. Never retry with changed input or under a new name, because that creates duplicates.
 

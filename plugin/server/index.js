@@ -3385,9 +3385,9 @@ var require_utils = __commonJS({
       let output2 = "";
       for (let i = 0; i < input2.length; i++) {
         if (input2[i] === "%" && i + 2 < input2.length) {
-          const hex3 = input2.slice(i + 1, i + 3);
-          if (isHexPair(hex3)) {
-            const normalizedHex = hex3.toUpperCase();
+          const hex4 = input2.slice(i + 1, i + 3);
+          if (isHexPair(hex4)) {
+            const normalizedHex = hex4.toUpperCase();
             const decoded = String.fromCharCode(parseInt(normalizedHex, 16));
             if (decodeUnreserved && isUnreserved(decoded)) {
               output2 += decoded;
@@ -3407,9 +3407,9 @@ var require_utils = __commonJS({
       for (let i = 0; i < input2.length; i++) {
         const ch = input2[i];
         if (ch === "%" && i + 2 < input2.length) {
-          const hex3 = input2.slice(i + 1, i + 3);
-          if (isHexPair(hex3)) {
-            const normalizedHex = hex3.toUpperCase();
+          const hex4 = input2.slice(i + 1, i + 3);
+          if (isHexPair(hex4)) {
+            const normalizedHex = hex4.toUpperCase();
             const decoded = String.fromCharCode(parseInt(normalizedHex, 16));
             if (decoded !== "." && isUnreserved(decoded)) {
               output2 += decoded;
@@ -3449,9 +3449,9 @@ var require_utils = __commonJS({
       for (let i = 0; i < input2.length; i++) {
         const ch = input2[i];
         if (ch === "%" && i + 2 < input2.length) {
-          const hex3 = input2.slice(i + 1, i + 3);
-          if (isHexPair(hex3)) {
-            output2 += "%" + hex3.toUpperCase();
+          const hex4 = input2.slice(i + 1, i + 3);
+          if (isHexPair(hex4)) {
+            output2 += "%" + hex4.toUpperCase();
             i += 2;
             continue;
           }
@@ -3487,9 +3487,9 @@ var require_utils = __commonJS({
       for (let i = 0; i < input2.length; i++) {
         const ch = input2[i];
         if (ch === "%" && i + 2 < input2.length) {
-          const hex3 = input2.slice(i + 1, i + 3);
-          if (isHexPair(hex3)) {
-            output2 += "%" + hex3.toUpperCase();
+          const hex4 = input2.slice(i + 1, i + 3);
+          if (isHexPair(hex4)) {
+            output2 += "%" + hex4.toUpperCase();
             i += 2;
             continue;
           }
@@ -3534,9 +3534,9 @@ var require_utils = __commonJS({
       for (let i = 0; i < input2.length; i++) {
         const ch = input2[i];
         if (ch === "%" && i + 2 < input2.length) {
-          const hex3 = input2.slice(i + 1, i + 3);
-          if (isHexPair(hex3)) {
-            const normalizedHex = hex3.toUpperCase();
+          const hex4 = input2.slice(i + 1, i + 3);
+          if (isHexPair(hex4)) {
+            const normalizedHex = hex4.toUpperCase();
             const decoded = String.fromCharCode(parseInt(normalizedHex, 16));
             if (isUnreserved(decoded)) {
               output2 += decoded;
@@ -3574,9 +3574,9 @@ var require_utils = __commonJS({
       let output2 = "";
       for (let i = 0; i < input2.length; i++) {
         if (input2[i] === "%" && i + 2 < input2.length) {
-          const hex3 = input2.slice(i + 1, i + 3);
-          if (isHexPair(hex3)) {
-            output2 += "%" + hex3.toUpperCase();
+          const hex4 = input2.slice(i + 1, i + 3);
+          if (isHexPair(hex4)) {
+            output2 += "%" + hex4.toUpperCase();
             i += 2;
             continue;
           }
@@ -15000,8 +15000,8 @@ function base64urlToUint8Array(base64url3) {
 function uint8ArrayToBase64url(bytes) {
   return uint8ArrayToBase64(bytes).replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
 }
-function hexToUint8Array(hex3) {
-  const cleanHex = hex3.replace(/^0x/, "");
+function hexToUint8Array(hex4) {
+  const cleanHex = hex4.replace(/^0x/, "");
   if (cleanHex.length % 2 !== 0) {
     throw new Error("Invalid hex string length");
   }
@@ -41663,6 +41663,210 @@ async function addHiddenTabs(lk2, page) {
   }
 }
 
+// src/timeline.ts
+async function laneFinder(lk2, ref, dryRun = false) {
+  const lanes = /* @__PURE__ */ new Map();
+  const names = /* @__PURE__ */ new Map();
+  let lastRank = "a0";
+  for (const lane of (await lk2.timelines.listLanes(ref)).data) {
+    lanes.set(lane.name.toLowerCase(), lane.id);
+    names.set(lane.id, lane.name);
+    if (lane.rank && lane.rank > lastRank) lastRank = lane.rank;
+  }
+  const laneFor = async (name) => {
+    const existing = lanes.get(name.toLowerCase());
+    if (existing) return existing;
+    if (dryRun) return `(new lane ${name})`;
+    lastRank = `${lastRank}V`;
+    const lane = await lk2.timelines.createLane(ref, { name, rank: lastRank, size: "lg" });
+    lanes.set(name.toLowerCase(), lane.id);
+    return lane.id;
+  };
+  return { laneFor, laneName: (id) => names.get(id) };
+}
+
+// src/edit.ts
+var sameText = (a3, b) => a3.replace(/\s+/g, " ").trim() === b.replace(/\s+/g, " ").trim();
+var headingText = (block, render) => render([block]).replace(/^#+\s*/, "").trim();
+function planSection(current, edit, newBlocks, render) {
+  let body;
+  let anchor2;
+  if (edit.section) {
+    const wanted = edit.section.replace(/^#+\s*/, "").trim().toLowerCase();
+    const headings = current.map((b, i) => ({ b, i })).filter(({ b }) => b.kind === "heading");
+    const matches = headings.filter(({ b }) => headingText(b, render).toLowerCase() === wanted);
+    if (matches.length === 0) {
+      const names = headings.map(({ b }) => `"${headingText(b, render)}"`).join(", ");
+      throw new Error(`No section "${edit.section}". Sections in this tab: ${names || "none"}.`);
+    }
+    if (matches.length > 1) throw new Error(`${matches.length} sections are named "${edit.section}"; replace the whole tab instead.`);
+    const { b: heading, i: start } = matches[0];
+    const level = heading.level;
+    let end = start + 1;
+    while (end < current.length && !(current[end].kind === "heading" && current[end].level <= level)) end++;
+    const stray = newBlocks.find((b) => b.kind === "heading" && b.level <= level);
+    if (stray) throw new Error(`The new text of "${edit.section}" has a heading of level ${stray.level}, which would start a new section. Use deeper headings, or replace the whole tab.`);
+    anchor2 = heading;
+    body = current.slice(start + 1, end);
+  } else {
+    body = [...current];
+  }
+  const ours = new Set(newBlocks.map((b) => b.id));
+  const rest = body.filter((b) => !ours.has(b.id));
+  const restText = render(rest);
+  if (restText.includes("<!-- lk:")) {
+    throw new Error(`${edit.section ? `Section "${edit.section}"` : "This tab"} holds content the API can't read or write (${restText.match(/<!-- lk:[^>]*-->/)[0]}). Edit it in LegendKeeper, or replace a smaller section.`);
+  }
+  const oursPresent = body.length - rest.length;
+  if (rest.length === 0 && oursPresent === newBlocks.length) return { done: true };
+  if (oursPresent === 0 && sameText(restText, render([...newBlocks]))) return { done: true };
+  if (rest.length > 0 && !sameText(restText, edit.old)) {
+    throw new Error(`${edit.section ? `Section "${edit.section}"` : "The tab"} no longer matches \`old\`; it may have been edited in LegendKeeper. Pull again and recheck the edit. Current text:
+
+${restText.trim()}`);
+  }
+  if (!anchor2) return { done: false, replaceAll: true };
+  const inserts = [];
+  const present = new Set(body.map((b) => b.id));
+  let prev = anchor2.id;
+  for (const block of newBlocks) {
+    if (!present.has(block.id)) inserts.push({ block, after: prev });
+    prev = block.id;
+  }
+  return { done: false, replaceAll: false, inserts, deletes: rest.map((b) => b.id) };
+}
+async function editPage(lk2, ws2, input2) {
+  const sources = [
+    ...input2.sections.map((s) => s.markdown),
+    ...Object.values(input2.sidebar),
+    `[[${input2.page}]]`,
+    ...input2.events.flatMap((e) => e.link ? [`[[${e.link}]]`] : [])
+  ];
+  const { resolve, ambiguous } = await buildResolver(lk2, ws2, sources);
+  const resourceId = resolve(input2.page);
+  if (!resourceId) throw new Error(`Page "${input2.page}" was not found.`);
+  const resource = await lk2.resources.get({ resourceId });
+  const index = await ws2.readIndex();
+  const names = new Map(index?.entries.map((e) => [e.id, e.name]));
+  const render = (blocks) => blocksToMarkdown(blocks, { nameOf: (id) => names.get(id) });
+  const warnings = [];
+  const images = await prepareImages(lk2, ws2.root, sources, input2.dryRun);
+  warnings.push(...images.warnings);
+  const convert = (where, markdown) => {
+    const result = markdownToBlocks(markdown, { resolve, image: images.image });
+    warnings.push(...result.warnings.map((w2) => `${where}: ${w2}`));
+    return result.blocks;
+  };
+  const tabs = resource.documents.filter((d) => d.type === "page" || d.type === "blank");
+  const seen = /* @__PURE__ */ new Set();
+  const sections = input2.sections.map((edit) => {
+    const doc = edit.tab ? tabs.find((d) => d.name?.toLowerCase() === edit.tab.trim().toLowerCase()) : tabs[0];
+    if (!doc) throw new Error(`"${resource.name}" has no page tab${edit.tab ? ` named "${edit.tab}"` : ""}. Tabs: ${tabs.map((d) => d.name).join(", ")}.`);
+    const where = `${doc.name}${edit.section ? ` / ${edit.section}` : ""}`;
+    const key = `${doc.id}\0${(edit.section ?? "").trim().toLowerCase()}`;
+    if (seen.has(key)) throw new Error(`Two edits replace ${where}; merge them into one.`);
+    seen.add(key);
+    const call = digest(resourceId, doc.id, edit.section ?? "", edit.markdown);
+    const blocks = convert(`${resource.name} / ${where}`, edit.markdown).map((b, i) => ({ ...b, id: stableId("b", call, String(i)) }));
+    return { edit, doc, where, blocks };
+  });
+  const planned = [];
+  for (const s of sections) {
+    const ref = { resourceId, documentId: s.doc.id };
+    if (s.doc.type === "blank") {
+      if (s.edit.section) throw new Error(`${s.doc.name} is empty, so it has no section "${s.edit.section}".`);
+      planned.push({ ...s, ref, plan: s.blocks.length ? { done: false, replaceAll: true } : { done: true } });
+      continue;
+    }
+    const current = await lk2.documents.getBlocks(ref);
+    planned.push({ ...s, ref, plan: planSection(current.blocks, s.edit, s.blocks, render) });
+  }
+  const eventEdits = input2.events.length ? await matchEvents(lk2, resourceId, resource, input2, resolve, warnings) : void 0;
+  const sidebar = Object.fromEntries(Object.entries(input2.sidebar).map(([k, v]) => [k, convert(`${resource.name} / sidebar ${k}`, v)]));
+  if (ambiguous.length) warnings.push(`Ambiguous names left as plain text (several pages match): ${[...new Set(ambiguous)].join(", ")}`);
+  if (input2.dryRun) {
+    return {
+      dryRun: true,
+      page: resource.name,
+      sections: planned.map((p2) => `${p2.where}: ${p2.plan.done ? "already says this" : "would be replaced"}`),
+      sidebar: Object.keys(sidebar).length ? Object.keys(sidebar) : void 0,
+      events: eventEdits?.map((e) => `${e.label}: ${e.edit.delete ? "would be deleted" : "would be updated"}`),
+      warnings
+    };
+  }
+  const sectionResults = [];
+  for (const p2 of planned) {
+    if (p2.plan.done) {
+      sectionResults.push(`${p2.where}: already up to date`);
+      continue;
+    }
+    if (p2.plan.replaceAll) {
+      await lk2.documents.replaceBlocks(p2.ref, { blocks: p2.blocks });
+    } else {
+      let { version: version2 } = await lk2.documents.getBlocks(p2.ref);
+      for (const { block, after } of p2.plan.inserts) version2 = (await lk2.blocks.insert(p2.ref, { block, after, ifMatch: version2 })).version;
+      for (const blockId of p2.plan.deletes) await lk2.blocks.delete({ ...p2.ref, blockId });
+    }
+    sectionResults.push(`${p2.where}: replaced`);
+  }
+  if (Object.keys(sidebar).length) await writeSidebar(lk2, { id: resourceId, name: resource.name, sidebar }, warnings);
+  const eventResults = [];
+  for (const e of eventEdits ?? []) {
+    if (e.edit.delete) {
+      await lk2.timelines.deleteEvent({ ...e.ref, eventId: e.id });
+      eventResults.push(`${e.label}: deleted`);
+      continue;
+    }
+    await lk2.timelines.updateEvent({ ...e.ref, eventId: e.id }, { ...e.patch, ...e.edit.lane ? { laneId: await e.laneFor(e.edit.lane) } : {} });
+    eventResults.push(`${e.label}: updated`);
+  }
+  return { page: resource.name, resourceId, sections: sectionResults, sidebar: Object.keys(sidebar), events: eventResults, warnings };
+}
+async function matchEvents(lk2, resourceId, resource, input2, resolve, warnings) {
+  const named = (d) => !input2.timeline || d.name?.toLowerCase() === input2.timeline.trim().toLowerCase();
+  const doc = resource.documents.find((d) => d.type === "time" && named(d));
+  if (!doc) throw new Error(`"${resource.name}" has no timeline tab${input2.timeline ? ` named "${input2.timeline}"` : ""}.`);
+  const ref = { resourceId, documentId: doc.id };
+  const events = [];
+  for await (const event of await lk2.timelines.listEvents(ref, { limit: 100 })) events.push(event);
+  const { laneFor } = await laneFinder(lk2, ref, input2.dryRun);
+  const out = [];
+  for (const edit of input2.events) {
+    const key = edit.event.trim().toLowerCase();
+    const matches = events.filter((e) => e.id === edit.event.trim() || e.name?.trim().toLowerCase() === key);
+    if (matches.length > 1) {
+      throw new Error(`${matches.length} events are named "${edit.event}": ${matches.map((m) => `${m.id} (${m.formattedStart})`).join(", ")}. Name one by its id.`);
+    }
+    if (matches.length === 0) {
+      const renamed = edit.name && events.filter((e) => e.name?.trim().toLowerCase() === edit.name.trim().toLowerCase());
+      if (renamed && renamed.length === 1) {
+        matches.push(renamed[0]);
+      } else if (edit.delete) {
+        warnings.push(`Event "${edit.event}" not found; nothing to delete (already deleted?).`);
+        continue;
+      } else {
+        throw new Error(`No event named "${edit.event}" on ${resource.name} / ${doc.name}.`);
+      }
+    }
+    let uri;
+    if (edit.link !== void 0) {
+      const linkId = edit.link.trim() ? resolve(edit.link) : void 0;
+      if (edit.link.trim() && !linkId) throw new Error(`Event "${edit.event}": link "${edit.link}" was not found.`);
+      uri = linkId ? `lk://resources/${linkId}` : "";
+    }
+    const patch = {
+      ...edit.name ? { name: edit.name } : {},
+      ...edit.start ? { formattedStart: edit.start } : {},
+      ...edit.end ? { formattedEnd: edit.end } : {},
+      ...uri !== void 0 ? { uri } : {},
+      ...edit.hidden !== void 0 ? { isHidden: edit.hidden } : {},
+      ...edit.color ? { color: edit.color } : {}
+    };
+    out.push({ edit, id: matches[0].id, label: matches[0].name ?? edit.event, ref, patch, laneFor });
+  }
+  return out;
+}
+
 // src/drafts.ts
 import { readdir, readFile as readFile2, stat } from "node:fs/promises";
 import { isAbsolute as isAbsolute2, join, relative as relative2, resolve as resolvePath2 } from "node:path";
@@ -41754,7 +41958,7 @@ async function readDrafts(root, paths) {
     const rel = relative2(base, full);
     if (rel.startsWith("..") || isAbsolute2(rel)) throw new Error(`Draft path "${path}" is outside the workspace.`);
     if ((await stat(full)).isDirectory()) {
-      const names = (await readdir(full)).filter((f) => f.endsWith(".md") && !f.startsWith("append--")).sort();
+      const names = (await readdir(full)).filter((f) => f.endsWith(".md") && !/^(append|edit)--/.test(f)).sort();
       if (names.length === 0) throw new Error(`No drafts in "${path}".`);
       files.push(...names.map((f) => join(full, f)));
     } else {
@@ -42277,20 +42481,7 @@ server.registerTool("lk_add_timeline_events", {
   let doc = resource.documents.find((d) => d.type === "time" && named(d)) ?? (resource.documents.length === 1 && resource.documents[0].type === "blank" ? resource.documents[0] : void 0);
   if (!doc) doc = await lkc.documents.create({ resourceId }, { name: timeline ?? "Timeline", type: "time" });
   const ref = { resourceId, documentId: doc.id };
-  const lanes = /* @__PURE__ */ new Map();
-  let lastRank = "a0";
-  for (const lane of (await lkc.timelines.listLanes(ref)).data) {
-    lanes.set(lane.name.toLowerCase(), lane.id);
-    if (lane.rank && lane.rank > lastRank) lastRank = lane.rank;
-  }
-  const laneFor = async (name) => {
-    const existing2 = lanes.get(name.toLowerCase());
-    if (existing2) return existing2;
-    lastRank = `${lastRank}V`;
-    const lane = await lkc.timelines.createLane(ref, { name, rank: lastRank, size: "lg" });
-    lanes.set(name.toLowerCase(), lane.id);
-    return lane.id;
-  };
+  const { laneFor } = await laneFinder(lkc, ref);
   const created = [];
   const existing = [];
   const warnings = [];
@@ -42320,5 +42511,40 @@ server.registerTool("lk_add_timeline_events", {
   }
   const mirrored = await refresh(lkc, ws, [resourceId]);
   return { timeline: `${resource.name} / ${doc.name}`, created, alreadyExisted: existing.length ? existing : void 0, mirrored, warnings };
+}));
+var hex3 = external_exports.string().regex(/^#[0-9A-Fa-f]{6}$/);
+server.registerTool("lk_edit_page", {
+  title: "Edit page",
+  description: "Corrects content already on a page: replaces a section of a tab (the text under one heading) or a whole tab, sets sidebar fields, and updates, moves or deletes timeline events. Each replacement gives the `old` text it expects, copied from the mirror; if the page changed since the pull, nothing is written and the current text is returned. Run with dryRun first. Safe to retry: an identical call finishes work left undone and skips what is already done. Use only for changes the user approved; to add new material, use lk_append_to_page.",
+  inputSchema: {
+    page: external_exports.string().describe("Page name, alias or resource id."),
+    sections: external_exports.array(external_exports.object({
+      tab: external_exports.string().optional().describe("Page tab name. Defaults to the first page tab."),
+      section: external_exports.string().optional().describe('Heading text of the section to replace, e.g. "Elysium". Its heading stays; the blocks under it, up to the next heading of the same or a higher level, are replaced. Omit to replace the whole tab.'),
+      old: external_exports.string().describe('The current Markdown of that section body (or whole tab), exactly as in the mirror file. "" for an empty section.'),
+      markdown: external_exports.string().describe('The new Markdown for the section body (or whole tab), in the plugin dialect. "" empties the section.')
+    })).max(20).default([]),
+    sidebar: external_exports.record(external_exports.string(), external_exports.string()).default({}).describe("Sidebar fields to set, by title, as in lk_create_pages. An existing field of that title is overwritten; a new title adds a field."),
+    timeline: external_exports.string().optional().describe("Timeline tab name for the event edits. Defaults to the first timeline tab."),
+    events: external_exports.array(external_exports.object({
+      event: external_exports.string().min(1).describe("Current event name, as in the mirror, or the event id when names repeat."),
+      name: external_exports.string().min(1).optional().describe("New name."),
+      lane: external_exports.string().min(1).optional().describe("Lane to move the event to, by name; a missing lane is created."),
+      start: external_exports.string().optional().describe("New start date in the timeline calendar."),
+      end: external_exports.string().optional().describe("New end date."),
+      link: external_exports.string().optional().describe('Page to link (name, alias or id); "" removes the link.'),
+      hidden: external_exports.boolean().optional(),
+      color: hex3.optional().describe("New fill color, #RRGGBB."),
+      delete: external_exports.boolean().optional().describe("Delete the event.")
+    })).max(50).default([]),
+    dryRun: external_exports.boolean().default(false)
+  },
+  annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true }
+}, (input2) => run(async () => {
+  if (!input2.sections.length && !Object.keys(input2.sidebar).length && !input2.events.length) throw new Error("Nothing to edit: give sections, sidebar or events.");
+  const result = await editPage(client(), ws, input2);
+  if ("dryRun" in result) return result;
+  const mirrored = await refresh(client(), ws, [result.resourceId]);
+  return { ...result, resourceId: void 0, mirrored };
 }));
 await server.connect(new StdioServerTransport());

@@ -231,7 +231,7 @@ async function fillTemplatePage(lk: LegendKeeper, page: Prepared) {
  * the rest as new fields in input order. A value that is only an image fills an image field;
  * a new image field goes first, as a portrait does. Idempotent.
  */
-async function writeSidebar(lk: LegendKeeper, page: Prepared, warnings: string[]) {
+export async function writeSidebar(lk: LegendKeeper, page: Pick<Prepared, 'id' | 'name' | 'sidebar'>, warnings: string[]) {
   const entries = Object.entries(page.sidebar).map(([title, blocks]) => ({ title: title.trim(), blocks }))
   if (entries.length === 0) return
   const properties = (await lk.properties.list({ resourceId: page.id })).data as { id?: string; kind: string; title?: string }[]

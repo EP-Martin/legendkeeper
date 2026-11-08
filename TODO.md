@@ -14,7 +14,8 @@
 - [x] Ingest handwritten notes end to end: four phone photos of pencil notes and a relationship map (a V5 chronicle) became 48 pages. Reading zoomed crops worked; the hard parts were lines squeezed in between earlier lines, labels along a diagram's lines, and claims or pronouns a draft adds beyond the notes.
 - [ ] Transcription rules: cover lines inserted between earlier lines, and diagrams whose labels sit on lines. Drafting rules: never infer pronouns from names.
 - [ ] Report to LegendKeeper: mentions can't carry marks (bold, italic), so a bold link loses its bold.
-- [ ] Correcting existing content needs one-off scripts: moving or recoloring timeline events, and replacing a tab's text after a fix. If this keeps coming up, consider one small tool for corrections with the same retry safety. Until then the skills keep "the plugin only creates and appends."
+- [x] Correcting existing content: `lk_edit_page` replaces a section or whole tab (guarded by the expected `old` text), sets sidebar fields, and renames, moves, recolors or deletes timeline events. Retry-safe; tested live in Plugin Test / Edit Test Tavern.
+- [ ] Edits not covered yet: moving or deleting pages, changing a page's icon, and editing a section that holds unreadable content.
 - [ ] Show event colors in the mirror's timeline lines, so Claude can match a world's existing lane colors.
 - [ ] Speed up large creates: about 7 sidebar writes per page dominate. Check whether `createMany` can carry sidebar properties.
 - [x] Write sidebar properties on plain pages too (`properties.create`), so fallback pages can match template pages. Template pages also get new fields for titles their template lacks. Checked live on the playground, including a retry.

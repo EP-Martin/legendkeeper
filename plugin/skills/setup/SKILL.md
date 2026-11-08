@@ -23,7 +23,7 @@ The mirror holds every GM secret in plain text. If the workspace is a git reposi
 
 ## 4. Style guide
 
-If `lk_status` reports a style guide page, read it and summarize it in a few lines. Ask whether anything needs changing. Changes to an existing guide are made by hand in LegendKeeper, or appended with `lk_append_to_page`.
+If `lk_status` reports a style guide page, read it and summarize it in a few lines. Ask whether anything needs changing. Make the changes the user approves with `lk_edit_page`, or add new sections with `lk_append_to_page`.
 
 If there is none, offer to create one. Before asking anything, study the mirror: tree layout, tag vocabulary, the templates in `_templates/` (tabs and sidebar fields), tabs and sections of existing pages, the voice of the longest pages, timeline page and lane names, and date formats. Propose answers drawn from the existing world. Then ask the user to confirm or correct them, at most five questions at a time:
 

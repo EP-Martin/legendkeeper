@@ -90,7 +90,7 @@ function frontmatter(block: string): Record<string, unknown> {
 }
 
 /**
- * Reads draft files, or every create draft in a folder (not `append--` drafts), from paths
+ * Reads draft files, or every create draft in a folder (not `append--` or `edit--` drafts), from paths
  * relative to the workspace. Paths outside the workspace are refused.
  */
 export async function readDrafts(root: string, paths: string[]): Promise<PageInput[]> {
@@ -101,7 +101,7 @@ export async function readDrafts(root: string, paths: string[]): Promise<PageInp
     const rel = relative(base, full)
     if (rel.startsWith('..') || isAbsolute(rel)) throw new Error(`Draft path "${path}" is outside the workspace.`)
     if ((await stat(full)).isDirectory()) {
-      const names = (await readdir(full)).filter((f) => f.endsWith('.md') && !f.startsWith('append--')).sort()
+      const names = (await readdir(full)).filter((f) => f.endsWith('.md') && !/^(append|edit)--/.test(f)).sort()
       if (names.length === 0) throw new Error(`No drafts in "${path}".`)
       files.push(...names.map((f) => join(full, f)))
     } else {

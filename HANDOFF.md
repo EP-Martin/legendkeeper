@@ -26,9 +26,9 @@ The owner wants it public, lean and maintainable. Don't over-engineer. Challenge
 
 Build and test: `cd server && npm install && npm run typecheck && npm test && npm run build`. Validate: `claude plugin validate ./plugin` and `claude plugin validate .`.
 
-## MCP tools (seven; keep the surface small)
+## MCP tools (eight; keep the surface small)
 
-`lk_status`, `lk_pull`, `lk_search`, `lk_create_pages` (plain or from a template, extra tabs, hidden tabs, sidebar text, `dryRun`), `lk_append_to_page`, `lk_update_page_info`, `lk_add_timeline_events`.
+`lk_status`, `lk_pull`, `lk_search`, `lk_create_pages` (plain or from a template, extra tabs, hidden tabs, sidebar text, `dryRun`), `lk_append_to_page`, `lk_update_page_info`, `lk_add_timeline_events`, `lk_edit_page` (replace a section or tab, set sidebar fields, update or delete events).
 
 Skills: `setup` (user-invoked), `ingest-notes`, `ask-world`, `continuity-check`, `lk-style` (shared reference, not user-invocable).
 
@@ -36,7 +36,7 @@ Skills: `setup` (user-invoked), `ingest-notes`, `ask-world`, `continuity-check`,
 
 - **Local mirror instead of live queries.** `lk_pull` writes `legendkeeper/world/` as Markdown with JSON-in-YAML frontmatter, plus `INDEX.md` and `.state/index.json`. API search is keyword-only, returns at most 100 results and doesn't paginate, which is useless for continuity checks. Claude greps local files well. Write tools refresh the files they touch.
 - **Skills hold the workflow; the server holds the logic.** Cowork has no Bash with this repo's tooling, so skills never shell out.
-- **Never rewrite existing content.** The plugin creates pages and appends sections. Changes to existing facts become "proposed edits" in the plan for the user to make by hand.
+- **Edits are approved and checked.** Changes to existing facts are Edit items in the plan, applied with `lk_edit_page` only after the drafts gate. Each replacement carries the `old` text it expects, so a page edited in LegendKeeper since the pull is refused, not overwritten. (An earlier version of this file said the plugin never rewrites existing content; that was Claude's assumption, not a requirement.)
 - **Secrets default to secret.** The mirror marks `playerHidden` (the page or any ancestor is hidden), renders hidden tabs as `## Tab: X [GM only]`, and moves hidden sidebar or infobox rows into `:::secret`. Player-safe mode skips all of these.
 - **Every write is retry-safe.** Resource, block and event ids are derived from the request content (`ids.ts`). `createMany` runs in chunks of 25 with content-derived idempotency keys, and `DUPLICATE_ID` means "already done." Calling a tool again with identical input never duplicates. This was verified live.
 - **The world's own templates first.** New LegendKeeper projects ship with 12 templates. `lk_create_pages` with `template` copies one under a placeholder name, then renames and hides it before any content goes in, fills tabs by name, deletes unfilled page tabs (which hold template instructions), keeps map tabs, and fills sidebar text fields by title. The fallback shapes in `plugin/skills/lk-style/page-shapes.md` apply only when no template fits.

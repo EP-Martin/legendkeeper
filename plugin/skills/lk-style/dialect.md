@@ -1,6 +1,6 @@
 # Markdown dialect
 
-The plugin's write tools (`lk_create_pages`, `lk_append_to_page`) accept CommonMark with GFM tables and task lists, plus the extensions below. The mirror under `legendkeeper/world/` is written in the same dialect, so anything you read there can be written back.
+The plugin's write tools (`lk_create_pages`, `lk_append_to_page`, `lk_edit_page`) accept CommonMark with GFM tables and task lists, plus the extensions below. The mirror under `legendkeeper/world/` is written in the same dialect, so anything you read there can be written back.
 
 ## Text
 
@@ -72,6 +72,6 @@ An image on a line of its own becomes an image block:
 
 ## Not supported yet
 
-Maps, embeds, collections and layout columns can't be written. The mirror shows them as comments such as `<!-- lk: embedded map -->`. Appending to a page never touches them.
+Maps, embeds, collections and layout columns can't be written. The mirror shows them as comments such as `<!-- lk: embedded map -->`. Appending to a page never touches them, and `lk_edit_page` refuses to replace a section that holds one.
 
 `<!-- lk: content the API cannot read -->` marks a block that LegendKeeper's API doesn't expose, such as a 5e stat block or a legacy child-page list. Its content is real but invisible to Claude. Never report it as missing information or a continuity gap; say the page has content that can only be read in LegendKeeper.

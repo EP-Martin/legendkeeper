@@ -17,11 +17,13 @@ Uncheck anything you don't want. Answer questions inline after **Answer:**. Fix 
 - [x] **<Existing Page>**: add "<Section title>". Source: p2 L1-3.
   <one line: the new facts>
 
-## Proposed edits (you apply these yourself)
+## Edit
 
-The plugin doesn't rewrite existing content. Here are changes to make by hand in LegendKeeper:
+Changes to what a page already says. Nothing here is written until you approve the drafts.
 
-- [ ] **<Page>**: infobox "Status" Alive → Dead (p3 L2: "Tom died in the fire").
+- [ ] **<Page>**: sidebar "Status" Alive → Dead. Source: p3 L2 ("Tom died in the fire").
+- [ ] **<Page> / <Section>**: "<old wording>" → "<new wording>". Source: p1 L6.
+- [ ] **<Timeline page>**: move "<event>" to <new date> on lane <lane>. Source: p2 L4.
 
 ## Timeline
 
